@@ -46,7 +46,7 @@ nVars :: Solver -> IO Int
 nVars s = fromIntegral <$> flip withSolver c_solver_nVars s
 
 newVar :: Solver -> IO Var
-newVar s = withSolver s $ \p -> Var <$> (c_solver_newVar p)
+newVar = fmap Var . flip withSolver c_solver_newVar
 
 -----------------------------------------------------------------------
 
