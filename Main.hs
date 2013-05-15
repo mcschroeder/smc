@@ -49,8 +49,11 @@ main = do
         f = generateFormula n
         m = f `seq` maxVar f
         f' = m `seq` tseitin f m
-    print $ length f'
+    print $ f' `deepseq` length f'
 
+instance NFData Literal where
+    rnf (Pos a) = a `seq` ()
+    rnf (Neg a) = a `seq` ()
 
 --main = defaultMain [
 --        bgroup "tseitin" [ bench "10" $ whnf tseitin (generateFormula 10)
