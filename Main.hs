@@ -5,6 +5,8 @@ import Criterion.Main
 import Control.DeepSeq
 import System.Environment
 
+import Control.Monad.Trans.State.Strict
+
 -- | A propositional logic formula
 data Formula = And Formula Formula
              | Or Formula Formula
@@ -31,11 +33,22 @@ generateFormula = snd . go 0
                     then (x2, Or f1 f2)
                     else (x2, And f1 f2)
 
+
+maxVar :: Formula -> Var
+maxVar = go 0
+    where
+        go n (Atom x)    = max n x
+        go n (Not f)     = max n (go n f)
+        go n (Or f1 f2)  = max (go n f1) (go n f2)
+        go n (And f1 f2) = max (go n f1) (go n f2)
+
+
 main = do
     args <- getArgs
     let n = read $ head args
         f = generateFormula n
-        f' = f `seq` tseitin f
+        m = f `seq` maxVar f
+        f' = m `seq` tseitin f m
     print $ length f'
 
 
@@ -65,88 +78,33 @@ main = do
 --newtype CNF = CNF [Clause] deriving (Show)
 type CNF = [Clause]
 
-tseitin :: Formula -> CNF
-tseitin (Atom x) = [[Pos x]]
-tseitin f        = [Pos x]:cnf
+tseitin :: Formula -> Var -> CNF
+tseitin f n = [Pos x]:cnf
     where
-        (x, cnf) = let n = maxVar f in n `seq` go n f
+        (x, cnf) = evalState (go f) n
 
-        go :: Var -> Formula -> (Var, CNF)
+        go :: Formula -> State Var (Var, CNF)
+        go (Atom x) = return (x, [])
         
-        go n (Or (Atom y) (Atom z)) = (x, cnf)
-            where
-                x   = n `seq` n+1
-                cnf = x `seq` ors x y z
+        go (Or f1 f2) = do
+            x <- newLabel
+            (y, cnf1) <- x `seq` go f1
+            (z, cnf2) <- y `seq` go f2
+            return (x,   z `seq` orEnc x y z ++ cnf1 ++ cnf2)
         
-        go n (Or f1 (Atom z)) = (x, cnf ++ cnf1)
-            where
-                (y, cnf1) = n `seq` go n f1
-                x         = y `seq` y+1
-                cnf       = x `seq` ors x y z
+        go (And f1 f2) = do
+            x <- newLabel
+            (y, cnf1) <- x `seq` go f1
+            (z, cnf2) <- y `seq` go f2
+            return (x,   z `seq` andEnc x y z ++ cnf1 ++ cnf2)
 
-        go n (Or (Atom y) f2) = (x, cnf ++ cnf2)
-            where
-                (z, cnf2) = n `seq` go n f2
-                x         = z `seq` z+1
-                cnf       = x `seq` ors x y z
+        orEnc  x y z = [[Neg y, Pos x], [Neg z, Pos x], [Neg x, Pos y, Pos z]]
+        andEnc x y z = [[Neg x, Pos y], [Neg x, Pos z], [Neg y, Neg z, Pos x]]
 
-        go n (Or f1 f2) = (x, cnf ++ cnf1 ++ cnf2)
-            where
-                (y, cnf1) = n `seq` go n f1
-                (z, cnf2) = y `seq` go y f2
-                x         = z `seq` z+1
-                cnf       = x `seq` ors x y z
-
-        go n (And (Atom y) (Atom z)) = (x, cnf)
-            where
-                x   = n `seq` n+1
-                cnf = x `seq` ands x y z
-        
-        go n (And f1 (Atom z)) = (x, cnf ++ cnf1)
-            where
-                (y, cnf1) = n `seq` go n f1
-                x         = y `seq` y+1
-                cnf       = x `seq` ands x y z
-
-        go n (And (Atom y) f2) = (x, cnf ++ cnf2)
-            where
-                (z, cnf2) = n `seq` go n f2
-                x         = z `seq` z+1
-                cnf       = x `seq` ands x y z
-
-        go n (And f1 f2) = (x, cnf ++ cnf1 ++ cnf2)
-            where
-                (y, cnf1) = n `seq` go n f1
-                (z, cnf2) = y `seq` go y f2
-                x         = z `seq` z+1
-                cnf       = x `seq` ands x y z
-
-        ors  x y z = [[Neg y, Pos x], [Neg z, Pos x], [Neg x, Pos y, Pos z]]
-        ands x y z = [[Neg x, Pos y], [Neg x, Pos z], [Neg y, Neg z, Pos x]]
-
-        --go n (Or f1 f2) = (x, x, cnf ++ cnf1 ++ cnf2)
-        --    where
-        --        (n1, z, cnf1) = n `seq` go n  f1
-        --        (n2, y, cnf2) = n1 `seq` go n1 f2
-        --        x   = n2 `seq` n2+1
-        --        cnf = z `seq` y `seq` x `seq` [[Neg y, Pos x], 
-        --               [Neg z, Pos x],
-        --               [Neg x, Pos y, Pos z]]
-
-        --go n (And f1 f2) = (x, x, cnf ++ cnf1 ++ cnf2)
-        --    where
-        --        (n1, z, cnf1) = n `seq` go n  f1
-        --        (n2, y, cnf2) = n1 `seq` go n1 f2
-        --        x   = n2 `seq` n2+1
-        --        cnf = z `seq` y `seq` x `seq` [[Neg x, Pos y],
-        --               [Neg x, Pos z],
-        --               [Neg y, Neg z, Pos x]]
-
-maxVar :: Formula -> Var
-maxVar = go 0
-    where
-        go n (Atom x)    = max n x
-        go n (Not f)     = max n (go n f)
-        go n (Or f1 f2)  = max (go n f1) (go n f2)
-        go n (And f1 f2) = max (go n f1) (go n f2)
+        newLabel :: State Var Var
+        newLabel = do
+            x <- get
+            let x' = x+1
+            put x'
+            return x'
 
