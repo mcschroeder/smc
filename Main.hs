@@ -7,6 +7,9 @@ import System.Environment
 
 import Control.Monad.Trans.State.Strict
 
+import Data.Sequence (Seq, (<|), (|>), (><))
+import qualified Data.Sequence as Seq
+
 -- | A propositional logic formula
 data Formula = And Formula Formula
              | Or Formula Formula
@@ -49,7 +52,7 @@ main = do
         f = generateFormula n
         m = f `seq` maxVar f
         f' = m `seq` tseitin f m
-    print $ f' `deepseq` length f'
+    print $ f' `deepseq` Seq.length f'
 
 instance NFData Literal where
     rnf (Pos a) = a `seq` ()
@@ -73,36 +76,33 @@ instance NFData Literal where
 
 
 
-
-
-
 ------------------------------------------------------------------------------
 
 --newtype CNF = CNF [Clause] deriving (Show)
-type CNF = [Clause]
+type CNF = Seq Clause --[Clause]
 
 tseitin :: Formula -> Var -> CNF
-tseitin f n = [Pos x]:cnf
+tseitin f n = [Pos x] <| cnf
     where
         (x, cnf) = evalState (go f) n
 
         go :: Formula -> State Var (Var, CNF)
-        go (Atom x) = return (x, [])
+        go (Atom x) = return (x, Seq.empty)
         
         go (Or f1 f2) = do
             x <- newLabel
             (y, cnf1) <- x `seq` go f1
             (z, cnf2) <- y `seq` go f2
-            return (x,   z `seq` orEnc x y z ++ cnf1 ++ cnf2)
+            return (x,   z `seq` orEnc x y z >< cnf1 >< cnf2)
         
         go (And f1 f2) = do
             x <- newLabel
             (y, cnf1) <- x `seq` go f1
             (z, cnf2) <- y `seq` go f2
-            return (x,   z `seq` andEnc x y z ++ cnf1 ++ cnf2)
+            return (x,   z `seq` andEnc x y z >< cnf1 >< cnf2)
 
-        orEnc  x y z = [[Neg y, Pos x], [Neg z, Pos x], [Neg x, Pos y, Pos z]]
-        andEnc x y z = [[Neg x, Pos y], [Neg x, Pos z], [Neg y, Neg z, Pos x]]
+        orEnc  x y z = Seq.empty |> [Neg y, Pos x] |> [Neg z, Pos x] |> [Neg x, Pos y, Pos z]
+        andEnc x y z = Seq.empty |> [Neg x, Pos y] |> [Neg x, Pos z] |> [Neg y, Neg z, Pos x]
 
         newLabel :: State Var Var
         newLabel = do
