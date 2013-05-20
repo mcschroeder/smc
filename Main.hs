@@ -53,8 +53,6 @@ main = do
     args <- getArgs
     let n = read $ head args
         f = generateFormula n
-    --let f = (And (Atom 0) (Atom 1))
-        --m = f `seq` maxVar f
     solveFormula f
 
 solveFormula f = 
@@ -71,7 +69,7 @@ addFormula :: Formula -> Solver ()
 addFormula f = do
     replicateM_ (fromEnum $ maxVar f) newVar   -- add atom vars
     x <- tseitin f
-    addClause [Pos x]
+    addUnit (Pos x)
     where 
         tseitin :: Formula -> Solver Var        
         tseitin (Atom x) = return x
@@ -79,24 +77,24 @@ addFormula f = do
         tseitin (Not f) = do
             x <- newVar
             y <- tseitin f
-            addClause [Neg x, Neg y]
-            addClause [Pos y, Pos x]
+            addBinary (Neg x) (Neg y)
+            addBinary (Pos y) (Pos x)
             return x
         
         tseitin (Or f1 f2) = do
             x <- newVar
             y <- x `seq` tseitin f1
             z <- y `seq` tseitin f2
-            addClause [Neg y, Pos x]
-            addClause [Neg z, Pos x]
-            addClause [Neg x, Pos y, Pos z]
+            addBinary  (Neg y) (Pos x)
+            addBinary  (Neg z) (Pos x)
+            addTernary (Neg x) (Pos y) (Pos z)
             return x
         
         tseitin (And f1 f2) = do
             x <- newVar
             y <- x `seq` tseitin f1
             z <- y `seq` tseitin f2
-            addClause [Neg x, Pos y] 
-            addClause [Neg x, Pos z]
-            addClause [Neg y, Neg z, Pos x]
+            addBinary  (Neg x) (Pos y)
+            addBinary  (Neg x) (Pos z)
+            addTernary (Neg y) (Neg z) (Pos x)
             return x

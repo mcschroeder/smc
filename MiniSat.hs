@@ -14,6 +14,9 @@ module MiniSat
     , newVar
     , nVars
     , addClause
+    , addUnit
+    , addBinary
+    , addTernary
     , solve
     , isOkay
 
@@ -79,6 +82,25 @@ addClause c = withSolver $ \solver -> do
             (Pos (Var v)) -> c_vecLit_pushVar p v 0
             (Neg (Var v)) -> c_vecLit_pushVar p v 1
 
+unlit :: Literal -> (CVar,CInt)
+unlit (Pos (Var v)) = (v,0)
+unlit (Neg (Var v)) = (v,1)
+
+addUnit :: Literal -> Solver ()
+addUnit l = withSolver (c_solver_addUnit v s)
+    where (v,s) = unlit l
+
+addBinary :: Literal -> Literal -> Solver ()
+addBinary l1 l2 = withSolver (c_solver_addBinary v1 s1 v2 s2)
+    where (v1,s1) = unlit l1
+          (v2,s2) = unlit l2
+
+addTernary :: Literal -> Literal -> Literal -> Solver ()
+addTernary l1 l2 l3 = withSolver (c_solver_addTernary v1 s1 v2 s2 v3 s3)
+    where (v1,s1) = unlit l1
+          (v2,s2) = unlit l2
+          (v3,s3) = unlit l3
+
 solve :: Solver ()
 solve = withSolver c_solver_solve
 
@@ -105,6 +127,17 @@ foreign import ccall unsafe "minisat_nVars"
 
 foreign import ccall unsafe "minisat_addClause"
     c_solver_addClause :: Ptr CSolver -> Ptr CVecLit -> IO ()
+
+foreign import ccall unsafe "minisat_addUnit"
+    c_solver_addUnit :: CVar -> CInt -> Ptr CSolver -> IO ()
+
+foreign import ccall unsafe "minisat_addBinary"
+    c_solver_addBinary :: CVar -> CInt -> CVar -> CInt 
+                       -> Ptr CSolver -> IO ()
+
+foreign import ccall unsafe "minisat_addTernary"
+    c_solver_addTernary :: CVar -> CInt -> CVar -> CInt -> CVar -> CInt 
+                        -> Ptr CSolver -> IO ()
 
 foreign import ccall safe "minisat_solve"
     c_solver_solve :: Ptr CSolver -> IO ()
