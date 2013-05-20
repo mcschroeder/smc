@@ -5,6 +5,7 @@ import Criterion.Main
 import Control.DeepSeq
 import System.Environment
 
+import Control.Monad
 import Control.Monad.Trans.State.Strict
 
 import Data.Sequence (Seq, (<|), (|>), (><))
@@ -12,7 +13,7 @@ import qualified Data.Sequence as Seq
 
 -- | A propositional logic formula
 data Formula = And Formula Formula
-             | Or Formula Formula
+             | Or  Formula Formula
              | Not Formula
              | Atom {-# UNPACK #-} !Var
              deriving (Show, Read)
@@ -46,63 +47,111 @@ maxVar = go 0
         go n (And f1 f2) = max (go n f1) (go n f2)
 
 
+--main = do
+--    args <- getArgs
+--    let n = read $ head args
+--        f = generateFormula n
+--        m = f `seq` maxVar f
+--        f' = m `seq` tseitin f m
+--    print $ f' `deepseq` Seq.length f'
+
+--instance NFData Literal where
+--    rnf (Pos a) = a `seq` ()
+--    rnf (Neg a) = a `seq` ()
+
+-- blergh
+maxVarCNF :: CNF -> Var
+maxVarCNF xs = case go (Pos 0) xs of
+    Pos n -> n
+    Neg n -> n
+    where 
+        go n [] = n
+        go n (x:xs) = let y = maximum x 
+                      in if y > n 
+                        then go y xs 
+                        else go n xs
+
 main = do
     args <- getArgs
     let n = read $ head args
         f = generateFormula n
-        m = f `seq` maxVar f
-        f' = m `seq` tseitin f m
-    print $ f' `deepseq` Seq.length f'
+    --let f = (And (Atom 1) (Atom 1))
+        m = f `seq` maxVar f        
+    solver <- newSolver
+    
+    --addFormulaToSolver solver f m
+        
+    let cnf = m `seq` tseitin f m
+        k = maxVarCNF cnf
+    replicateM_ (fromEnum k) (newVar solver)
+    mapM_ (addClause solver) cnf
+    
+    --print (show cnf)
 
-instance NFData Literal where
-    rnf (Pos a) = a `seq` ()
-    rnf (Neg a) = a `seq` ()
+    numvars <- nVars solver
+    print (show numvars ++ " k=" ++ show k)
 
---main = defaultMain [
---        bgroup "tseitin" [ bench "10" $ whnf tseitin (generateFormula 10)
---                         , bench "50" $ whnf tseitin (generateFormula 20)
---                         , bench "100" $ whnf tseitin (generateFormula 30)
---                         ]
---                   ]
+    solve solver
+    ok <- okay solver
+    print (show ok)
 
+--addFormulaToSolver :: Solver -> Formula -> Var -> IO ()
+--addFormulaToSolver solver f n = do
+--    replicateM_ n (newVar solver)
+--    x <- addWithTseitin solver f
+--    addUnary solver x
+--    where
+--        addWithTseitin :: Solver -> Formula -> IO Var
+--        addWithTseitin solver (Atom x) = return x
+        
+--        addWithTseitin solver (Or f1 f2) = do
+--            x <- newVar solver
+--            y <- x `seq` go f1
+--            z <- y `seq` go f2
+--            z `seq` do
+--                addBinary solver (Neg y) (Pos x)
+--                addBinary solver (Neg z) (Pos x)
+--                addTernary solver (Neg x) (Pos y) (Pos z)
+--            return x
 
---main = do
---    solver <- newSolver
---    x <- newVar solver
---    y <- newVar solver
---    --let n = nVars solver
---    n <- nVars solver
---    print (show x ++ " " ++ show y ++ " " ++ show n)
+--        addWithTseitin solver (And f1 f2) = do
+--            x <- newVar solver
+--            y <- x `seq` go f1
+--            z <- y `seq` go f2
+--            z `seq` do
+--                addBinary solver (Neg x) (Pos y)
+--                addBinary solver (Neg x) (Pos z)
+--                addTernary solver (Neg y) (Neg z) (Pos x)
+--            return x
 
 
 
 ------------------------------------------------------------------------------
 
---newtype CNF = CNF [Clause] deriving (Show)
-type CNF = Seq Clause --[Clause]
+type CNF = [Clause]
 
 tseitin :: Formula -> Var -> CNF
-tseitin f n = [Pos x] <| cnf
+tseitin f n = [Pos x]:cnf
     where
         (x, cnf) = evalState (go f) n
 
         go :: Formula -> State Var (Var, CNF)
-        go (Atom x) = return (x, Seq.empty)
+        go (Atom x) = return (x, [])
         
         go (Or f1 f2) = do
             x <- newLabel
             (y, cnf1) <- x `seq` go f1
             (z, cnf2) <- y `seq` go f2
-            return (x,   z `seq` orEnc x y z >< cnf1 >< cnf2)
+            return (x,   z `seq` orEnc x y z ++ cnf1 ++ cnf2)
         
         go (And f1 f2) = do
             x <- newLabel
             (y, cnf1) <- x `seq` go f1
             (z, cnf2) <- y `seq` go f2
-            return (x,   z `seq` andEnc x y z >< cnf1 >< cnf2)
+            return (x,   z `seq` andEnc x y z ++ cnf1 ++ cnf2)
 
-        orEnc  x y z = Seq.empty |> [Neg y, Pos x] |> [Neg z, Pos x] |> [Neg x, Pos y, Pos z]
-        andEnc x y z = Seq.empty |> [Neg x, Pos y] |> [Neg x, Pos z] |> [Neg y, Neg z, Pos x]
+        orEnc  x y z = [[Neg y, Pos x], [Neg z, Pos x], [Neg x, Pos y, Pos z]]
+        andEnc x y z = [[Neg x, Pos y], [Neg x, Pos z], [Neg y, Neg z, Pos x]]
 
         newLabel :: State Var Var
         newLabel = do

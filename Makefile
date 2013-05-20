@@ -2,8 +2,12 @@
 
 MINISAT_DIR = MiniSat-p_v1.14
 CXX = g++
+PROF_OPTS = -rtsopts -prof -auto-all
 
-minisat:
+Main: minisat
+	ghc --make -O $(PROF_OPTS) Main.hs libminisat.dylib
+
+minisat: clean
 	cd $(MINISAT_DIR); make
 	$(CXX) -c minisat.c
 	$(CXX) -dynamiclib -o libminisat.dylib minisat.o \
@@ -12,3 +16,4 @@ minisat:
 clean:
 	cd $(MINISAT_DIR); make clean
 	rm -f minisat.o libminisat.dylib
+	rm -f Main Main.hi Minisat.hi Main.o
