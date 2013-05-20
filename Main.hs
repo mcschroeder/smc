@@ -25,6 +25,8 @@ f1 = Or (Atom 0) (Atom 1)
 f2 = And (Atom 0) (Atom 1)
 f3 = Or (And (Atom 0) (Atom 1)) (And (Atom 2) (Atom 3))
 f4 = Or (And (Atom 0) (Not (Atom 1))) (Atom 2)
+f5 = And (And (Not (Atom 0)) (Or (Atom 0) (Not (Atom 1)))) 
+         (Or (And (Atom 0) (Not (Atom 1))) (Atom 1))
 
 -- generates formulas with alternating and / or connectives, for testing
 generateFormula :: Word -> Formula
@@ -59,19 +61,28 @@ solveFormula f =
     runSolver $ do
         addFormula f
         liftIO . print =<< nVars
+        liftIO . print =<< isOkay
+        liftIO $ print "solving..."
         solve
         liftIO . print =<< isOkay
 
 
--- TODO: negation!
 addFormula :: Formula -> Solver ()
 addFormula f = do
     replicateM_ (fromEnum $ maxVar f) newVar   -- add atom vars
     x <- tseitin f
     addClause [Pos x]
     where 
-        tseitin :: Formula -> Solver Var
+        tseitin :: Formula -> Solver Var        
         tseitin (Atom x) = return x
+        
+        tseitin (Not f) = do
+            x <- newVar
+            y <- tseitin f
+            addClause [Neg x, Neg y]
+            addClause [Pos y, Pos x]
+            return x
+        
         tseitin (Or f1 f2) = do
             x <- newVar
             y <- x `seq` tseitin f1
@@ -80,6 +91,7 @@ addFormula f = do
             addClause [Neg z, Pos x]
             addClause [Neg x, Pos y, Pos z]
             return x
+        
         tseitin (And f1 f2) = do
             x <- newVar
             y <- x `seq` tseitin f1
