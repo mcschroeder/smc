@@ -5,27 +5,33 @@
 {-# LANGUAGE LambdaCase #-}
 
 module MiniSat 
-    ( Solver
-    , newSolver
+    ( Var(..)
+    , Literal(..)
+    , Clause
+
+    , Solver
+    , runSolver
     , newVar
     , nVars
     , addClause
     , solve
-    , okay
+    , isOkay
 
-    , Var(..)
-    , Literal(..)
-    , Clause
+      -- * Re-export
+    , liftIO
     ) where
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.Reader
 import Foreign
 import Foreign.C
 
 import Control.Exception (bracket)
 
-newtype Solver = Solver (ForeignPtr CSolver)
+-----------------------------------------------------------------------
 
 newtype Var = Var CVar deriving (Eq, Ord, Num, Enum, Read)
 
@@ -42,35 +48,42 @@ instance Show Literal where
 
 type Clause = [Literal]
 
-newSolver :: IO Solver
-newSolver = Solver <$> (newForeignPtr p_solver_delete =<< c_solver_new)
+-----------------------------------------------------------------------
 
-withSolver :: Solver -> (Ptr CSolver -> IO a) -> IO a
-withSolver (Solver fp) = withForeignPtr fp
+newtype Solver a = Solver (ReaderT (ForeignPtr CSolver) IO a)
+    deriving (Functor, Applicative, Monad, MonadIO)
 
-nVars :: Solver -> IO Int
-nVars s = fromIntegral <$> flip withSolver c_solver_nVars s
+runSolver :: Solver a -> IO a
+runSolver (Solver act) = 
+    runReaderT act =<< (newForeignPtr p_solver_delete =<< c_solver_new)
 
-newVar :: Solver -> IO Var
-newVar = fmap Var . flip withSolver c_solver_newVar
+withSolver :: (Ptr CSolver -> IO a) -> Solver a
+withSolver f = Solver $ lift =<< asks (flip withForeignPtr f)
 
-addClause :: Solver -> Clause -> IO ()
-addClause s c = withSolver s $ \p -> do
-                --print (show c)
-                bracket c_vecLit_new c_vecLit_delete $ \veclit -> do
-                    pushLits veclit c
-                    c_solver_addClause p veclit
-                where
-                    pushLits :: Ptr CVecLit -> [Literal] -> IO ()
-                    pushLits p = mapM_ $ \case 
-                        (Pos (Var v)) -> c_vecLit_pushVar p v 0
-                        (Neg (Var v)) -> c_vecLit_pushVar p v 1
+newVar :: Solver Var
+newVar = Var <$> withSolver c_solver_newVar
 
-solve :: Solver -> IO ()
-solve = flip withSolver c_solver_solve
+nVars :: Solver Int
+nVars = fromIntegral <$> withSolver c_solver_nVars
 
-okay :: Solver -> IO Bool
-okay = flip withSolver c_solver_okay
+addClause :: Clause -> Solver ()
+addClause c = withSolver $ \solver -> do 
+    bracket c_vecLit_new 
+            c_vecLit_delete 
+            (\veclit -> do
+                pushLits veclit c
+                c_solver_addClause solver veclit)
+    where
+        pushLits :: Ptr CVecLit -> [Literal] -> IO ()
+        pushLits p = mapM_ $ \case 
+            (Pos (Var v)) -> c_vecLit_pushVar p v 0
+            (Neg (Var v)) -> c_vecLit_pushVar p v 1
+
+solve :: Solver ()
+solve = withSolver c_solver_solve
+
+isOkay :: Solver Bool
+isOkay = withSolver c_solver_okay
 
 -----------------------------------------------------------------------
 

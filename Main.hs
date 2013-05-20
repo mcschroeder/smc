@@ -1,15 +1,15 @@
-import Data.Word
-import MiniSat
-
-import Criterion.Main
-import Control.DeepSeq
-import System.Environment
-
+import Control.Applicative
 import Control.Monad
 import Control.Monad.Trans.State.Strict
+import Data.Word
+import System.Environment
 
 import Data.Sequence (Seq, (<|), (|>), (><))
+
 import qualified Data.Sequence as Seq
+
+import MiniSat
+
 
 -- | A propositional logic formula
 data Formula = And Formula Formula
@@ -47,116 +47,44 @@ maxVar = go 0
         go n (And f1 f2) = max (go n f1) (go n f2)
 
 
---main = do
---    args <- getArgs
---    let n = read $ head args
---        f = generateFormula n
---        m = f `seq` maxVar f
---        f' = m `seq` tseitin f m
---    print $ f' `deepseq` Seq.length f'
-
---instance NFData Literal where
---    rnf (Pos a) = a `seq` ()
---    rnf (Neg a) = a `seq` ()
-
--- blergh
-maxVarCNF :: CNF -> Var
-maxVarCNF xs = case go (Pos 0) xs of
-    Pos n -> n
-    Neg n -> n
-    where 
-        go n [] = n
-        go n (x:xs) = let y = maximum x 
-                      in if y > n 
-                        then go y xs 
-                        else go n xs
-
 main = do
     args <- getArgs
     let n = read $ head args
         f = generateFormula n
-    --let f = (And (Atom 1) (Atom 1))
-        m = f `seq` maxVar f        
-    solver <- newSolver
-    
-    --addFormulaToSolver solver f m
-        
-    let cnf = m `seq` tseitin f m
-        k = maxVarCNF cnf
-    replicateM_ (fromEnum k) (newVar solver)
-    mapM_ (addClause solver) cnf
-    
-    --print (show cnf)
+    --let f = (And (Atom 0) (Atom 1))
+        --m = f `seq` maxVar f
+    solveFormula f
 
-    numvars <- nVars solver
-    print (show numvars ++ " k=" ++ show k)
-
-    solve solver
-    ok <- okay solver
-    print (show ok)
-
---addFormulaToSolver :: Solver -> Formula -> Var -> IO ()
---addFormulaToSolver solver f n = do
---    replicateM_ n (newVar solver)
---    x <- addWithTseitin solver f
---    addUnary solver x
---    where
---        addWithTseitin :: Solver -> Formula -> IO Var
---        addWithTseitin solver (Atom x) = return x
-        
---        addWithTseitin solver (Or f1 f2) = do
---            x <- newVar solver
---            y <- x `seq` go f1
---            z <- y `seq` go f2
---            z `seq` do
---                addBinary solver (Neg y) (Pos x)
---                addBinary solver (Neg z) (Pos x)
---                addTernary solver (Neg x) (Pos y) (Pos z)
---            return x
-
---        addWithTseitin solver (And f1 f2) = do
---            x <- newVar solver
---            y <- x `seq` go f1
---            z <- y `seq` go f2
---            z `seq` do
---                addBinary solver (Neg x) (Pos y)
---                addBinary solver (Neg x) (Pos z)
---                addTernary solver (Neg y) (Neg z) (Pos x)
---            return x
+solveFormula f = 
+    runSolver $ do
+        addFormula f
+        liftIO . print =<< nVars
+        solve
+        liftIO . print =<< isOkay
 
 
-
-------------------------------------------------------------------------------
-
-type CNF = [Clause]
-
-tseitin :: Formula -> Var -> CNF
-tseitin f n = [Pos x]:cnf
-    where
-        (x, cnf) = evalState (go f) n
-
-        go :: Formula -> State Var (Var, CNF)
-        go (Atom x) = return (x, [])
-        
-        go (Or f1 f2) = do
-            x <- newLabel
-            (y, cnf1) <- x `seq` go f1
-            (z, cnf2) <- y `seq` go f2
-            return (x,   z `seq` orEnc x y z ++ cnf1 ++ cnf2)
-        
-        go (And f1 f2) = do
-            x <- newLabel
-            (y, cnf1) <- x `seq` go f1
-            (z, cnf2) <- y `seq` go f2
-            return (x,   z `seq` andEnc x y z ++ cnf1 ++ cnf2)
-
-        orEnc  x y z = [[Neg y, Pos x], [Neg z, Pos x], [Neg x, Pos y, Pos z]]
-        andEnc x y z = [[Neg x, Pos y], [Neg x, Pos z], [Neg y, Neg z, Pos x]]
-
-        newLabel :: State Var Var
-        newLabel = do
-            x <- get
-            let x' = x+1
-            put x'
-            return x'
-
+-- TODO: negation!
+addFormula :: Formula -> Solver ()
+addFormula f = do
+    replicateM_ (fromEnum $ maxVar f) newVar   -- add atom vars
+    x <- tseitin f
+    addClause [Pos x]
+    where 
+        tseitin :: Formula -> Solver Var
+        tseitin (Atom x) = return x
+        tseitin (Or f1 f2) = do
+            x <- newVar
+            y <- x `seq` tseitin f1
+            z <- y `seq` tseitin f2
+            addClause [Neg y, Pos x]
+            addClause [Neg z, Pos x]
+            addClause [Neg x, Pos y, Pos z]
+            return x
+        tseitin (And f1 f2) = do
+            x <- newVar
+            y <- x `seq` tseitin f1
+            z <- y `seq` tseitin f2
+            addClause [Neg x, Pos y] 
+            addClause [Neg x, Pos z]
+            addClause [Neg y, Neg z, Pos x]
+            return x
