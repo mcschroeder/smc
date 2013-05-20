@@ -20,6 +20,11 @@ extern "C" int minisat_nVars(Solver *solver)
 	return solver->nVars();
 }
 
+extern "C" void minisat_addUnit(Var var, int sign, Solver *solver)
+{
+	solver->addUnit(sign ? ~Lit(var) : Lit(var));
+}
+
 extern "C" void minisat_addClause(Solver *solver, vec<Lit>* lits)
 {
 	solver->addClause(*lits);
@@ -47,8 +52,7 @@ extern "C" void minisat_deleteVecLit(vec<Lit>* lits)
     delete lits;
 }
 
-extern "C" void minisat_vecLit_pushVar(vec<Lit>* lits, int var, int sign)
+extern "C" void minisat_vecLit_pushVar(vec<Lit>* lits, Var var, int sign)
 {
-	Lit p = toLit(var);
-	lits->push(sign ? ~p : p);
+	lits->push(sign ? ~Lit(var) : Lit(var));
 }
