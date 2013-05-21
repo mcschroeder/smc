@@ -1,4 +1,4 @@
-## 
+## At the moment this only works on OS X
 
 MINISAT_DIR = MiniSat-p_v1.14
 CXX = g++
