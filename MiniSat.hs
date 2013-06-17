@@ -31,25 +31,37 @@ import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
 import Foreign
 import Foreign.C
+import Text.Read (readPrec, parens, lexP, Lexeme(Symbol))
+import Text.ParserCombinators.ReadPrec ((<++))
 
 import Control.Exception (bracket)
 
 -----------------------------------------------------------------------
 
-newtype Var = Var CVar deriving (Eq, Ord, Num, Enum, Read)
-
-instance Show Var where
-    show (Var n) = show n
+newtype Var = Var CVar deriving (Eq, Ord, Num, Enum)
 
 data Literal = Pos {-# UNPACK #-} !Var
              | Neg {-# UNPACK #-} !Var
              deriving (Eq, Ord)
 
+type Clause = [Literal]
+
+-----------------------------------------------------------------------
+
+instance Show Var where
+    show (Var n) = show n
+
+instance Read Var where
+    readPrec = parens $ readPrec >>= return . Var
+
 instance Show Literal where
     show (Pos n) =     show n
     show (Neg n) = '-':show n
 
-type Clause = [Literal]
+instance Read Literal where
+    readPrec = parens $ do Symbol "-" <- lexP
+                           readPrec >>= return . Neg . Var
+                      <++ (readPrec >>= return . Pos . Var)
 
 -----------------------------------------------------------------------
 
