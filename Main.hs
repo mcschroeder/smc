@@ -1,53 +1,52 @@
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Trans.State.Strict
+import Data.Foldable hiding (mapM_)
 import Data.Word
 import System.Environment
 
-import Data.Sequence (Seq, (<|), (|>), (><))
-
-import qualified Data.Sequence as Seq
+import Prelude hiding (foldr,foldl)
 
 import MiniSat
 
+data Formula a = And [Formula a] 
+               | Or  [Formula a]
+               | Not (Formula a)
+               | Lit a
+               deriving (Show, Read)
 
--- | A propositional logic formula
-data Formula = And Formula Formula
-             | Or  Formula Formula
-             | Not Formula
-             | Atom {-# UNPACK #-} !Var
-             deriving (Show, Read)
+instance Foldable Formula where
+    foldr f z (Lit x)  = f x z
+    foldr f z (Not x)  = foldr f z x
+    foldr f z (Or  xs) = foldr (flip $ foldr f) z xs
+    foldr f z (And xs) = foldr (flip $ foldr f) z xs
+
+
+maxVar :: Formula Literal -> Var
+maxVar = foldr max' 0
+    where
+        max' (Pos a) b = max a b
+        max' (Neg a) b = max a b
 
 
 -- some example formulas
-f0 = Or (Atom 0) (Atom 0)
-f1 = Or (Atom 0) (Atom 1)
-f2 = And (Atom 0) (Atom 1)
-f3 = Or (And (Atom 0) (Atom 1)) (And (Atom 2) (Atom 3))
-f4 = Or (And (Atom 0) (Not (Atom 1))) (Atom 2)
-f5 = And (And (Not (Atom 0)) (Or (Atom 0) (Not (Atom 1)))) 
-         (Or (And (Atom 0) (Not (Atom 1))) (Atom 1))
+f0 = Or [Lit (Pos 0), Lit (Pos 0)]
+f1 = Or [Lit (Pos 0), Lit (Pos 1)]
+f2 = And [Lit (Pos 0), Lit (Pos 1)]
+f3 = Or [And [Lit (Pos 0), Lit (Pos 1)], And [Lit (Pos 2), Lit (Pos 3)]]
+f4 = Or [And [Lit (Pos 0), Not (Lit (Pos 1))], Lit (Pos 2)]
+f5 = Or [And [Lit (Pos 0), Lit (Neg 1)], Lit (Pos 2)]
 
 -- generates formulas with alternating and / or connectives, for testing
-generateFormula :: Word -> Formula
+generateFormula :: Word -> Formula Literal
 generateFormula = snd . go 0
     where
-        go x 0 = (x+1, Atom x)
+        go x 0 = (x+1, Lit (Pos x))
         go x n = let (x1,f1) = go x  (n-1)
                      (x2,f2) = go x1 (n-1)
                  in if even n
-                    then (x2, Or f1 f2)
-                    else (x2, And f1 f2)
-
-
-maxVar :: Formula -> Var
-maxVar = go 0
-    where
-        go n (Atom x)    = max n x
-        go n (Not f)     = max n (go n f)
-        go n (Or f1 f2)  = max (go n f1) (go n f2)
-        go n (And f1 f2) = max (go n f1) (go n f2)
-
+                    then (x2, Or [f1,f2])
+                    else (x2, And [f1,f2])
 
 main = do
     args <- getArgs
@@ -65,36 +64,32 @@ solveFormula f =
         liftIO . print =<< isOkay
 
 
-addFormula :: Formula -> Solver ()
+addFormula :: Formula Literal -> Solver ()
 addFormula f = do
     replicateM_ (fromEnum $ maxVar f) newVar   -- add atom vars
     x <- tseitin f
-    addUnit (Pos x)
+    addUnit x
     where 
-        tseitin :: Formula -> Solver Var        
-        tseitin (Atom x) = return x
+        tseitin :: Formula Literal -> Solver Literal
+        tseitin (Lit x) = return x
         
         tseitin (Not f) = do
             x <- newVar
             y <- tseitin f
-            addBinary (Neg x) (Neg y)
-            addBinary (Pos y) (Pos x)
-            return x
-        
-        tseitin (Or f1 f2) = do
+            addBinary (Neg x) (neg y)
+            addBinary (Pos x) y
+            return (Pos x)
+
+        tseitin (Or fs) = do
             x <- newVar
-            y <- x `seq` tseitin f1
-            z <- y `seq` tseitin f2
-            addBinary  (Neg y) (Pos x)
-            addBinary  (Neg z) (Pos x)
-            addTernary (Neg x) (Pos y) (Pos z)
-            return x
+            ys <- mapM tseitin fs
+            mapM_ (addBinary (Pos x) . neg) ys
+            addClause $ (Neg x) : ys
+            return (Pos x)
         
-        tseitin (And f1 f2) = do
+        tseitin (And fs) = do
             x <- newVar
-            y <- x `seq` tseitin f1
-            z <- y `seq` tseitin f2
-            addBinary  (Neg x) (Pos y)
-            addBinary  (Neg x) (Pos z)
-            addTernary (Neg y) (Neg z) (Pos x)
-            return x
+            ys <- mapM tseitin fs
+            mapM_ (addBinary (Neg x)) ys
+            addClause $ (Pos x) : map neg ys
+            return (Pos x)

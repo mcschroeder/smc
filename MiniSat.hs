@@ -8,6 +8,7 @@ module MiniSat
     ( Var(..)
     , Literal(..)
     , Clause
+    , neg
 
     , Solver
     , runSolver
@@ -45,6 +46,10 @@ data Literal = Pos {-# UNPACK #-} !Var
              deriving (Eq, Ord)
 
 type Clause = [Literal]
+
+neg :: Literal -> Literal
+neg (Pos x) = (Neg x)
+neg (Neg x) = (Pos x)
 
 -----------------------------------------------------------------------
 
