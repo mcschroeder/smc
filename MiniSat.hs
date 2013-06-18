@@ -32,8 +32,11 @@ import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
 import Foreign
 import Foreign.C
-import Text.Read (readPrec, parens, lexP, Lexeme(Symbol))
+
+import Text.Read (readPrec,parens)
+import Text.ParserCombinators.ReadP (string,choice)
 import Text.ParserCombinators.ReadPrec ((<++))
+import qualified Text.ParserCombinators.ReadPrec as ReadPrec (lift)
 
 import Control.Exception (bracket)
 
@@ -61,12 +64,12 @@ instance Read Var where
 
 instance Show Literal where
     show (Pos n) =     show n
-    show (Neg n) = '-':show n
+    show (Neg n) = '¬':show n
 
 instance Read Literal where
-    readPrec = parens $ do Symbol "-" <- lexP
+    readPrec = parens $ do ReadPrec.lift $ choice [string "¬", string "-"]
                            readPrec >>= return . Neg . Var
-                      <++ (readPrec >>= return . Pos . Var)
+                    <++ do readPrec >>= return . Pos . Var
 
 -----------------------------------------------------------------------
 
