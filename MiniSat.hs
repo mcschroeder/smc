@@ -10,6 +10,7 @@ module MiniSat
     , Clause
     , neg
     , isNeg
+    , mapLit
     , var
     , varEq
 
@@ -45,7 +46,7 @@ import Control.Exception (bracket)
 
 -----------------------------------------------------------------------
 
-newtype Var = Var CVar deriving (Eq, Ord, Num, Enum)
+newtype Var = Var CVar deriving (Eq, Ord, Num, Enum, Integral, Real)
 
 data Literal = Pos {-# UNPACK #-} !Var
              | Neg {-# UNPACK #-} !Var
@@ -60,6 +61,10 @@ neg (Neg x) = (Pos x)
 isNeg :: Literal -> Bool
 isNeg (Neg x) = True
 isNeg _       = False
+
+mapLit :: (Var -> Var) -> Literal -> Literal
+mapLit f (Pos x) = (Pos $ f x)
+mapLit f (Neg x) = (Neg $ f x)
 
 var :: Literal -> Var
 var (Pos x) = x
@@ -104,7 +109,7 @@ nVars :: Solver Int
 nVars = fromIntegral <$> withSolver c_solver_nVars
 
 addClause :: Clause -> Solver ()
-addClause c = withSolver $ \solver -> do 
+addClause c = withSolver $ \solver -> do
     bracket c_vecLit_new 
             c_vecLit_delete 
             (\veclit -> do

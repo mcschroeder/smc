@@ -11,13 +11,8 @@ import Prelude hiding (foldr)
 
 import MiniSat
 import Formula
-import Parser
+import Aiger
 
-maxVar :: Formula Literal -> Var
-maxVar = foldr max' 0
-    where
-        max' (Pos a) b = max a b
-        max' (Neg a) b = max a b
 
 -- some example formulas
 f0 = Or [Lit (Pos 0), Lit (Pos 0)]
@@ -40,9 +35,22 @@ generateFormula = snd . go 0
 
 main = do
     args <- getArgs
-    let n = read $ head args
-        f = generateFormula n
-    solveFormula f
+    let k = read $ args !! 0
+        file = args !! 1
+    parseAiger file >>= \case
+        Left err  -> print err
+        Right aag -> do
+            let cnf = unwind k aag
+                m = fromIntegral (maxVar aag) * (k+1) + 1
+            print cnf
+            runSolver $ do
+                replicateM_ m newVar
+                mapM_ addClause cnf
+                solve
+                isOkay >>= \case
+                    True  -> liftIO $ putStrLn "OK"
+                    False -> liftIO $ putStrLn "FAIL"
+
 
 solveFormula f = 
     runSolver $ do
@@ -83,3 +91,10 @@ addFormula f = do
             mapM_ (addBinary (Neg x)) ys
             addClause $ (Pos x) : map neg ys
             return (Pos x)
+
+        maxVar :: Formula Literal -> Var
+        maxVar = foldr max' 0
+            where
+                max' (Pos a) b = max a b
+                max' (Neg a) b = max a b
+

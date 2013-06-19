@@ -2,6 +2,7 @@
 
 MINISAT_DIR = MiniSat-p_v1.14
 CXX = g++
+CFLAGS = -ggdb -D DEBUG
 PROF_OPTS = -rtsopts -prof -auto-all
 
 Main: minisat
@@ -9,8 +10,8 @@ Main: minisat
 
 minisat: clean
 	cd $(MINISAT_DIR); make
-	$(CXX) -c minisat.c
-	$(CXX) -dynamiclib -o libminisat.dylib minisat.o \
+	$(CXX) $(CFLAGS) -c minisat.c
+	$(CXX) $(CFLAGS) -dynamiclib -o libminisat.dylib minisat.o \
 	  $(MINISAT_DIR)/{Solver,Proof,File}.o
 
 clean:
