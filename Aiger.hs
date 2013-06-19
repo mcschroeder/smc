@@ -1,3 +1,5 @@
+{-# LANGUAGE RecordWildCards #-}
+
 module Aiger 
     ( Aiger(..)
     , Latch
@@ -21,7 +23,31 @@ data Aiger = Aiger { maxVar  :: Var
                    , latches :: [Latch]
                    , outputs :: [Literal]
                    , gates   :: [Gate]
-                   }
+                   } deriving (Show)
+
+-----------------------------------------------------------------------
+
+unwind0 :: Aiger -> [Clause]
+unwind0 Aiger {..} = [Pos 0] : props : concatMap gateToCNF gates'
+    where
+        latches0 = map (\(s0,s1) -> (var s0, Neg 0)) latches
+        gates' = replaceVars latches0 gates
+        props = [neg . head $ outputs]
+
+
+gateToCNF :: Gate -> [Clause]
+gateToCNF (o,l0,l1) = [[neg o, l0], [neg o, l1], [o, neg l0, neg l1]]
+
+replaceVars :: [(Var, Literal)] -> [Gate] -> [Gate]
+replaceVars xs = map (mapTuple3 (rep xs))
+    where
+        rep :: [(Var, Literal)] -> Literal -> Literal
+        rep xs y = case lookup (var y) xs of
+            Just x  -> if isNeg y then neg x else x
+            Nothing -> y
+
+mapTuple3 :: (a -> b) -> (a,a,a) -> (b,b,b)
+mapTuple3 f (x,y,z) = (f x, f y, f z)
 
 -----------------------------------------------------------------------
 

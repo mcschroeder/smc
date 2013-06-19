@@ -9,6 +9,9 @@ module MiniSat
     , Literal(..)
     , Clause
     , neg
+    , isNeg
+    , var
+    , varEq
 
     , Solver
     , runSolver
@@ -53,6 +56,17 @@ type Clause = [Literal]
 neg :: Literal -> Literal
 neg (Pos x) = (Neg x)
 neg (Neg x) = (Pos x)
+
+isNeg :: Literal -> Bool
+isNeg (Neg x) = True
+isNeg _       = False
+
+var :: Literal -> Var
+var (Pos x) = x
+var (Neg x) = x
+
+varEq :: Literal -> Literal -> Bool
+varEq a b = (var a) == (var b)
 
 -----------------------------------------------------------------------
 
