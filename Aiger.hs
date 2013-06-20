@@ -29,44 +29,45 @@ data Aiger = Aiger { maxVar  :: Var
 -----------------------------------------------------------------------
 
 unwind :: Int -> Aiger -> [Clause]
-unwind k Aiger {..} = [Pos 0] : concatMap gateToCNF gates0 
-                      ++ go 1 maxVar k [prop0]
+unwind k Aiger{..} = [[Pos 0]] ++ cnf0 ++ [[Neg p0, output]] ++ go 1 k p0
     where
-        go :: Int -> Var -> Int -> [Literal] -> [Clause]
-        go _ _ 0 props = [props]
-        go k m n props = concatMap gateToCNF (gatesk k m) ++
-                         go (k + 1) (m + maxVar) (n - 1) (propk m : props)
+        p0   = maxVar + 1
+        cnf0 = concatMap gateToCNF $ nextGates 0 constants [] gates
 
-        prop0 :: Literal
-        prop0 = neg . head $ outputs
-
-        propk :: Var -> Literal
-        propk m = mapLit (+ m) prop0
-
-        gates0 :: [Gate]
-        gates0 = map (mapTuple3 (step constants)) gates
-
-        gatesk :: Int -> Var -> [Gate]
-        gatesk k m = map (mapTuple3 (mapLit (incVar m))) $ 
-                     map (mapTuple3 (step constants)) $ 
-                     map (mapTuple3 (step (flipflop k))) $ gates
-
-        constants :: [(Var,Literal)]
+        output    = head outputs
         constants = map (\(s0,s1) -> (var s0, Neg 0)) latches
+        flips     = map (\(s0,s1) -> (var s0, s1)) latches
+        flops     = map (\(s0,s1) -> (var s1, s0)) latches
 
-        flipflop :: Int -> [(Var,Literal)]
-        flipflop k | odd k     = map (\(s0,s1) -> (var s0, s1)) latches
-                   | otherwise = map (\(s0,s1) -> (var s1, s0)) latches
+        flipflop k = if odd k then flips else flops
 
-        step :: [(Var,Literal)] -> Literal -> Literal
-        step assocs x0 = case lookup (var x0) assocs of
-            Just x1 -> if isNeg x0 then neg x1 else x1
-            Nothing -> x0
+        go :: Int -> Int -> Var -> [Clause]
+        go _ 0 p0 = [[Pos p0]]
+        go k n p0 = [[Neg p0]] ++ cnf ++ [[Neg p, o]] ++ go (k+1) (n-1) p
+            where
+                minVar = p0
+                p      = minVar + maxVar + 1
+                o      = raiseIndex minVar output
+                cnf    = concatMap gateToCNF $ 
+                         nextGates minVar constants (flipflop k) gates
 
-        incVar :: Var -> Var -> Var
-        incVar m 0 = 0  -- we don't want to increase constants
-        incVar m x = x + m
+type VarMapping = [(Var,Literal)]
 
+nextGates :: Var -> VarMapping -> VarMapping -> [Gate] -> [Gate]
+nextGates minVar constants flipflop =
+    (map . mapTuple3) (raiseIndex minVar . step constants . step flipflop)
+
+step :: VarMapping -> Literal -> Literal
+step assocs x0 = case lookup (var x0) assocs of
+    Just x1 -> if isNeg x0 then neg x1 else x1
+    Nothing -> x0
+
+raiseIndex :: Var -> Literal -> Literal
+raiseIndex = mapLit . incVar
+
+incVar :: Var -> Var -> Var
+incVar _ 0 = 0
+incVar n v = v + n
 
 gateToCNF :: Gate -> [Clause]
 gateToCNF (o,l0,l1) = [[neg o, l0], [neg o, l1], [o, neg l0, neg l1]]

@@ -7,7 +7,7 @@ import Data.Foldable hiding (mapM_)
 import Data.Word
 import System.Environment
 
-import Prelude hiding (foldr)
+import Prelude hiding (foldr,concat)
 
 import MiniSat
 import Formula
@@ -33,6 +33,7 @@ generateFormula = snd . go 0
                     then (x2, Or [f1,f2])
                     else (x2, And [f1,f2])
 
+
 main = do
     args <- getArgs
     let k = read $ args !! 0
@@ -41,10 +42,10 @@ main = do
         Left err  -> print err
         Right aag -> do
             let cnf = unwind k aag
-                m = fromIntegral (maxVar aag) * (k+1) + 1
+                maxVar = var $ foldr max (Pos 0) $ concat cnf
             print cnf
             runSolver $ do
-                replicateM_ m newVar
+                replicateM_ (fromIntegral maxVar) newVar
                 mapM_ addClause cnf
                 solve
                 isOkay >>= \case
