@@ -27,6 +27,10 @@ module MiniSat
 
       -- * Re-export
     , liftIO
+
+
+    , ClauseId
+    , enableProofLogging
     ) where
 
 import Control.Applicative
@@ -34,6 +38,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
+import Data.Bits
 import Foreign
 import Foreign.C
 
@@ -148,6 +153,56 @@ isOkay = withSolver c_solver_okay
 
 -----------------------------------------------------------------------
 
+enableProofLogging :: ([Literal] -> IO ())            -- root
+                   -> ([ClauseId] -> [Var] -> IO ())  -- chain
+                   -> (ClauseId -> IO ())             -- deleted
+                   -> Solver ()
+enableProofLogging root chain deleted = withSolver $ \solver -> do
+    rootFunPtr <- mkRootFunPtr (\veclit -> do
+                                    let size = fromIntegral $ c_vecLit_size veclit
+                                        dat  = c_vecLit_data veclit
+                                    lits <- map c2lit <$> peekArray size dat
+                                    root lits)
+    chainFunPtr <- mkChainFunPtr (\cs cs_size xs xs_size -> do
+                                      clauseIds <- peekArray (fromIntegral cs_size) cs
+                                      vars <- map Var <$> peekArray (fromIntegral xs_size) xs
+                                      chain clauseIds vars)
+    deletedFunPtr <- mkDeletedFunPtr deleted
+    c_solver_enableProof solver rootFunPtr chainFunPtr deletedFunPtr
+
+type RootCallback = Ptr CVecLit -> IO ()
+type ChainCallback = Ptr CClauseId -> CInt -> Ptr CVar -> CInt -> IO ()
+type DeletedCallback = CClauseId -> IO ()
+
+foreign import ccall "wrapper"
+    mkRootFunPtr :: RootCallback -> IO (FunPtr RootCallback)
+
+foreign import ccall "wrapper"
+    mkChainFunPtr :: ChainCallback -> IO (FunPtr ChainCallback)
+
+foreign import ccall "wrapper"
+    mkDeletedFunPtr :: DeletedCallback -> IO (FunPtr DeletedCallback)
+
+foreign import ccall unsafe "minisat_setProofTraverser"
+    c_solver_enableProof :: Ptr CSolver 
+                         -> FunPtr RootCallback 
+                         -> FunPtr ChainCallback 
+                         -> FunPtr DeletedCallback
+                         -> IO ()
+
+
+type ClauseId = CClauseId  --TODO
+
+type CClauseId = CInt
+type CLit = CInt
+
+c2lit :: CLit -> Literal
+c2lit x | x .&. 1 == 0 = Pos v
+        | otherwise    = Neg v
+    where v = Var $ x `shiftR` 1
+
+-----------------------------------------------------------------------
+
 data CSolver
 type CVar = CInt
 data CVecLit
@@ -192,3 +247,13 @@ foreign import ccall unsafe "minisat_deleteVecLit"
 
 foreign import ccall unsafe "minisat_vecLit_pushVar"
     c_vecLit_pushVar :: Ptr CVecLit -> CVar -> CInt -> IO ()
+
+foreign import ccall unsafe "minisat_vecLit_size"
+    c_vecLit_size :: Ptr CVecLit -> CInt
+
+foreign import ccall unsafe "minisat_vecLit_data"
+    c_vecLit_data :: Ptr CVecLit -> Ptr CLit
+
+
+
+

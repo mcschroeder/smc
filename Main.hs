@@ -45,6 +45,10 @@ main = do
                 maxVar = var $ foldr max (Pos 0) $ concat cnf
             print cnf
             runSolver $ do
+                enableProofLogging (\lits -> putStrLn ("root: " ++ show lits))
+                                   (\cids vars -> putStrLn ("chain: cids=" ++ show cids ++ 
+                                                          " vars=" ++ show vars))
+                                   (\c -> putStrLn ("deleted: " ++ show c))
                 replicateM_ (fromIntegral maxVar) newVar
                 mapM_ addClause cnf
                 solve
