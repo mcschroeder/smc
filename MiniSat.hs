@@ -25,12 +25,11 @@ module MiniSat
     , solve
     , isOkay
 
+    , runSolverWithProofLogging
+    , ClauseId
+
       -- * Re-export
     , liftIO
-
-
-    , ClauseId
-    , enableProofLogging
     ) where
 
 import Control.Applicative
@@ -153,22 +152,31 @@ isOkay = withSolver c_solver_okay
 
 -----------------------------------------------------------------------
 
-enableProofLogging :: ([Literal] -> IO ())            -- root
-                   -> ([ClauseId] -> [Var] -> IO ())  -- chain
-                   -> (ClauseId -> IO ())             -- deleted
-                   -> Solver ()
-enableProofLogging root chain deleted = withSolver $ \solver -> do
-    rootFunPtr <- mkRootFunPtr (\veclit -> do
-                                    let size = fromIntegral $ c_vecLit_size veclit
-                                        dat  = c_vecLit_data veclit
-                                    lits <- map c2lit <$> peekArray size dat
-                                    root lits)
-    chainFunPtr <- mkChainFunPtr (\cs cs_size xs xs_size -> do
-                                      clauseIds <- peekArray (fromIntegral cs_size) cs
-                                      vars <- map Var <$> peekArray (fromIntegral xs_size) xs
-                                      chain clauseIds vars)
+runSolverWithProofLogging :: (Clause -> IO ())               -- add root
+                          -> ([ClauseId] -> [Var] -> IO ())  -- add chain
+                          -> (ClauseId -> IO ())             -- deleted
+                          -> Solver a
+                          -> IO a
+runSolverWithProofLogging root chain deleted solver = do
+    
+    rootFunPtr <- mkRootFunPtr $ \c -> do
+        let size = fromIntegral $ c_vecLit_size c
+            dat  = c_vecLit_data c
+        lits <- map c2lit <$> peekArray size dat
+        root lits
+
+    chainFunPtr <- mkChainFunPtr $ \cs cs_size xs xs_size -> do
+        clauseIds <- peekArray (fromIntegral cs_size) cs
+        vars <- map Var <$> peekArray (fromIntegral xs_size) xs
+        chain clauseIds vars
+    
     deletedFunPtr <- mkDeletedFunPtr deleted
-    c_solver_enableProof solver rootFunPtr chainFunPtr deletedFunPtr
+
+    runSolver $ do
+        t <- withSolver (c_solver_newProof rootFunPtr chainFunPtr deletedFunPtr)
+        r <- solver
+        withSolver (c_solver_deleteProof t)
+        return r
 
 type RootCallback = Ptr CVecLit -> IO ()
 type ChainCallback = Ptr CClauseId -> CInt -> Ptr CVar -> CInt -> IO ()
@@ -183,12 +191,17 @@ foreign import ccall "wrapper"
 foreign import ccall "wrapper"
     mkDeletedFunPtr :: DeletedCallback -> IO (FunPtr DeletedCallback)
 
-foreign import ccall unsafe "minisat_setProofTraverser"
-    c_solver_enableProof :: Ptr CSolver 
-                         -> FunPtr RootCallback 
+data CProofTraverser
+
+foreign import ccall unsafe "minisat_newProof"
+    c_solver_newProof :: FunPtr RootCallback 
                          -> FunPtr ChainCallback 
                          -> FunPtr DeletedCallback
-                         -> IO ()
+                         -> Ptr CSolver
+                         -> IO (Ptr CProofTraverser)
+
+foreign import ccall unsafe "minisat_deleteProof"
+    c_solver_deleteProof :: Ptr CProofTraverser -> Ptr CSolver -> IO ()
 
 
 type ClauseId = CClauseId  --TODO
@@ -238,6 +251,8 @@ foreign import ccall safe "minisat_solve"
 
 foreign import ccall unsafe "minisat_okay"
     c_solver_okay :: Ptr CSolver -> IO Bool
+
+-----------------------------------------------------------------------
 
 foreign import ccall unsafe "minisat_newVecLit"
     c_vecLit_new :: IO (Ptr CVecLit)

@@ -82,17 +82,24 @@ struct Traverser : public ProofTraverser {
 	}
 };
 
-extern "C" void minisat_setProofTraverser(Solver *solver, 
-									      RootCallback *root,
-									      ChainCallback *chain,
-									      DeletedCallback *deleted)
+extern "C" Traverser * minisat_newProof(RootCallback *root,
+								        ChainCallback *chain,
+									    DeletedCallback *deleted,
+									    Solver *solver)
 {
 	Traverser *t = new Traverser();
 	t->rootCallback = root;
 	t->chainCallback = chain;
 	t->deletedCallback = deleted;
 	solver->proof = new Proof(*t);
-	// TODO: free traverser
+	return t;
+}
+
+extern "C" void minisat_deleteProof(Traverser *traverser, Solver *solver)
+{
+	delete traverser;
+	delete solver->proof;
+	solver->proof = NULL;
 }
 
 //////////////////////////////////////////////////////////////////////////////

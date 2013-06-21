@@ -12,6 +12,12 @@ import Prelude hiding (foldr,concat)
 import MiniSat
 import Formula
 import Aiger
+import Proof
+
+
+-- TODO: remove
+import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as VM
 
 
 -- some example formulas
@@ -44,17 +50,23 @@ main = do
             let cnf = unwind k aag
                 maxVar = var $ foldr max (Pos 0) $ concat cnf
             print cnf
-            runSolver $ do
-                enableProofLogging (\lits -> putStrLn ("root: " ++ show lits))
-                                   (\cids vars -> putStrLn ("chain: cids=" ++ show cids ++ 
-                                                          " vars=" ++ show vars))
-                                   (\c -> putStrLn ("deleted: " ++ show c))
+            proof <- VM.new 0
+            runSolverWithProofLogging (root proof) 
+                                      (chain proof) 
+                                      (deleted proof) $ do
+                --enableProofLogging 
+                --    (\lits -> putStrLn ("root: " ++ show lits))
+                --    (\cids vars -> putStrLn ("chain: cids=" ++ show cids ++ 
+                --                             " vars=" ++ show vars))
+                --    (\c -> putStrLn ("deleted: " ++ show c))
                 replicateM_ (fromIntegral maxVar) newVar
                 mapM_ addClause cnf
                 solve
                 isOkay >>= \case
                     True  -> liftIO $ putStrLn "OK"
                     False -> liftIO $ putStrLn "FAIL"
+            --frozen_proof <- V.freeze proof
+            --print frozen_proof
 
 
 solveFormula f = 
