@@ -3,6 +3,7 @@
 
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module MiniSat 
     ( Var(..)
@@ -25,8 +26,9 @@ module MiniSat
     , solve
     , isOkay
 
-    , runSolverWithProofLogging
+    , ProofNode
     , ClauseId
+    , proof
 
       -- * Re-export
     , liftIO
@@ -38,6 +40,11 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
 import Data.Bits
+import Data.IORef
+import Data.Vector (Vector)
+import Data.Vector.Mutable (IOVector)
+import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as VM
 import Foreign
 import Foreign.C
 
@@ -96,15 +103,29 @@ instance Read Literal where
 
 -----------------------------------------------------------------------
 
-newtype Solver a = Solver (ReaderT (ForeignPtr CSolver) IO a)
+data SolverEnv = SolverEnv { _solver :: ForeignPtr CSolver
+                           , _proof  :: IORef (IOVector ProofNode)
+                           , _used   :: IORef Int }
+
+newtype Solver a = Solver (ReaderT SolverEnv IO a)
     deriving (Functor, Applicative, Monad, MonadIO)
 
 runSolver :: Solver a -> IO a
-runSolver (Solver act) = 
-    runReaderT act =<< (newForeignPtr p_solver_delete =<< c_solver_new)
+runSolver (Solver act) = do
+    solver <- newForeignPtr p_solver_delete =<< c_solver_new
+    proof <- newIORef =<< VM.new 100 -- TODO: finetune
+    used <- newIORef 0
+    let env = SolverEnv solver proof used
+    rootFunPtr <- mkRootFunPtr (root env)
+    chainFunPtr <- mkChainFunPtr (chain env)
+    deletedFunPtr <- mkDeletedFunPtr (deleted env)
+    t <- withForeignPtr solver $ c_solver_newProof rootFunPtr chainFunPtr deletedFunPtr
+    r <- runReaderT act env    
+    withForeignPtr solver $ c_solver_deleteProof t
+    return r
 
 withSolver :: (Ptr CSolver -> IO a) -> Solver a
-withSolver f = Solver $ lift =<< asks (flip withForeignPtr f)
+withSolver f = Solver $ lift =<< asks (flip withForeignPtr f . _solver)
 
 newVar :: Solver Var
 newVar = Var <$> withSolver c_solver_newVar
@@ -152,67 +173,48 @@ isOkay = withSolver c_solver_okay
 
 -----------------------------------------------------------------------
 
-runSolverWithProofLogging :: (Clause -> IO ())               -- add root
-                          -> ([ClauseId] -> [Var] -> IO ())  -- add chain
-                          -> (ClauseId -> IO ())             -- deleted
-                          -> Solver a
-                          -> IO a
-runSolverWithProofLogging root chain deleted solver = do
-    
-    rootFunPtr <- mkRootFunPtr $ \c -> do
-        let size = fromIntegral $ c_vecLit_size c
-            dat  = c_vecLit_data c
-        lits <- map c2lit <$> peekArray size dat
-        root lits
+data ProofNode = Root Clause
+               | Chain Clause [ClauseId] [Var]
+               | Sink [ClauseId]
+               deriving (Show)
 
-    chainFunPtr <- mkChainFunPtr $ \cs cs_size xs xs_size -> do
-        clauseIds <- peekArray (fromIntegral cs_size) cs
-        vars <- map Var <$> peekArray (fromIntegral xs_size) xs
-        chain clauseIds vars
-    
-    deletedFunPtr <- mkDeletedFunPtr deleted
+proof :: Solver (Vector ProofNode)
+proof = Solver $ do
+    p <- liftIO . readIORef =<< asks _proof
+    n <- liftIO . readIORef =<< asks _used
+    let p' = VM.slice 0 n p
+    liftIO $ V.freeze p'
 
-    runSolver $ do
-        t <- withSolver (c_solver_newProof rootFunPtr chainFunPtr deletedFunPtr)
-        r <- solver
-        withSolver (c_solver_deleteProof t)
-        return r
+root :: SolverEnv -> Ptr CVecLit -> IO ()
+root SolverEnv{..} c = do
+    let size = fromIntegral $ c_vecLit_size c
+        dat  = c_vecLit_data c
+    clause <- map c2lit <$> peekArray size dat
+    appendProofNode _proof _used (Root clause)
 
-type RootCallback = Ptr CVecLit -> IO ()
-type ChainCallback = Ptr CClauseId -> CInt -> Ptr CVar -> CInt -> IO ()
-type DeletedCallback = CClauseId -> IO ()
+chain :: SolverEnv -> Ptr CClauseId -> CInt -> Ptr CVar -> CInt -> IO ()
+chain SolverEnv{..} cs cs_size xs xs_size = do
+    clauseIds <- peekArray (fromIntegral cs_size) cs
+    vars <- map Var <$> peekArray (fromIntegral xs_size) xs
+    let res = [] -- TODO
+    appendProofNode _proof _used (Chain res clauseIds vars)
 
-foreign import ccall "wrapper"
-    mkRootFunPtr :: RootCallback -> IO (FunPtr RootCallback)
+deleted :: SolverEnv -> CClauseId -> IO ()
+deleted SolverEnv{..} c = do
+    putStrLn ("deleted: " ++ show c)
+    -- TODO
 
-foreign import ccall "wrapper"
-    mkChainFunPtr :: ChainCallback -> IO (FunPtr ChainCallback)
-
-foreign import ccall "wrapper"
-    mkDeletedFunPtr :: DeletedCallback -> IO (FunPtr DeletedCallback)
-
-data CProofTraverser
-
-foreign import ccall unsafe "minisat_newProof"
-    c_solver_newProof :: FunPtr RootCallback 
-                         -> FunPtr ChainCallback 
-                         -> FunPtr DeletedCallback
-                         -> Ptr CSolver
-                         -> IO (Ptr CProofTraverser)
-
-foreign import ccall unsafe "minisat_deleteProof"
-    c_solver_deleteProof :: Ptr CProofTraverser -> Ptr CSolver -> IO ()
-
-
-type ClauseId = CClauseId  --TODO
-
-type CClauseId = CInt
-type CLit = CInt
-
-c2lit :: CLit -> Literal
-c2lit x | x .&. 1 == 0 = Pos v
-        | otherwise    = Neg v
-    where v = Var $ x `shiftR` 1
+appendProofNode :: IORef (IOVector ProofNode) -> IORef Int -> ProofNode -> IO ()
+appendProofNode proof used node = do
+    p <- readIORef proof
+    i <- readIORef used
+    p' <- if i < VM.length p 
+            then return p
+            else do p' <- VM.unsafeGrow p i
+                    writeIORef proof p'
+                    return p'    
+    VM.unsafeWrite p' i node
+    writeIORef used (i+1)
 
 -----------------------------------------------------------------------
 
@@ -254,6 +256,42 @@ foreign import ccall unsafe "minisat_okay"
 
 -----------------------------------------------------------------------
 
+type RootCallback = Ptr CVecLit -> IO ()
+type ChainCallback = Ptr CClauseId -> CInt -> Ptr CVar -> CInt -> IO ()
+type DeletedCallback = CClauseId -> IO ()
+
+foreign import ccall "wrapper"
+    mkRootFunPtr :: RootCallback -> IO (FunPtr RootCallback)
+
+foreign import ccall "wrapper"
+    mkChainFunPtr :: ChainCallback -> IO (FunPtr ChainCallback)
+
+foreign import ccall "wrapper"
+    mkDeletedFunPtr :: DeletedCallback -> IO (FunPtr DeletedCallback)
+
+data CProofTraverser
+type ClauseId = CClauseId  --TODO
+type CClauseId = CInt
+
+foreign import ccall unsafe "minisat_newProof"
+    c_solver_newProof :: FunPtr RootCallback 
+                         -> FunPtr ChainCallback 
+                         -> FunPtr DeletedCallback
+                         -> Ptr CSolver
+                         -> IO (Ptr CProofTraverser)
+
+foreign import ccall unsafe "minisat_deleteProof"
+    c_solver_deleteProof :: Ptr CProofTraverser -> Ptr CSolver -> IO ()
+
+-----------------------------------------------------------------------
+
+type CLit = CInt  -- TODO
+
+c2lit :: CLit -> Literal
+c2lit x | x .&. 1 == 0 = Pos v
+        | otherwise    = Neg v
+    where v = Var $ x `shiftR` 1
+
 foreign import ccall unsafe "minisat_newVecLit"
     c_vecLit_new :: IO (Ptr CVecLit)
 
@@ -268,7 +306,3 @@ foreign import ccall unsafe "minisat_vecLit_size"
 
 foreign import ccall unsafe "minisat_vecLit_data"
     c_vecLit_data :: Ptr CVecLit -> Ptr CLit
-
-
-
-
