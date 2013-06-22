@@ -232,17 +232,17 @@ foreign import ccall unsafe "minisat_newVar"
 foreign import ccall unsafe "minisat_nVars" 
     c_solver_nVars :: Ptr CSolver -> IO CInt
 
-foreign import ccall unsafe "minisat_addClause"
+foreign import ccall safe "minisat_addClause"
     c_solver_addClause :: Ptr CSolver -> Ptr CVecLit -> IO ()
 
-foreign import ccall unsafe "minisat_addUnit"
+foreign import ccall safe "minisat_addUnit"
     c_solver_addUnit :: CVar -> CInt -> Ptr CSolver -> IO ()
 
-foreign import ccall unsafe "minisat_addBinary"
+foreign import ccall safe "minisat_addBinary"
     c_solver_addBinary :: CVar -> CInt -> CVar -> CInt 
                        -> Ptr CSolver -> IO ()
 
-foreign import ccall unsafe "minisat_addTernary"
+foreign import ccall safe "minisat_addTernary"
     c_solver_addTernary :: CVar -> CInt -> CVar -> CInt -> CVar -> CInt 
                         -> Ptr CSolver -> IO ()
 
