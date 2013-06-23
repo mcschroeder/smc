@@ -175,7 +175,8 @@ isOkay = withSolver c_solver_okay
 
 data ProofNode = Root Clause
                | Chain Clause [ClauseId] [Var]
-               | Sink [ClauseId]
+               | Sink [ClauseId] [Var]
+               | Deleted
                deriving (Show)
 
 proof :: Solver (Vector ProofNode)
@@ -198,8 +199,10 @@ chain SolverEnv{..} cs cs_size xs xs_size = do
     vars <- map Var <$> peekArray (fromIntegral xs_size) xs
     p <- readIORef _proof
     clauses <- mapM (readClause p) clauseIds
-    let res = resolve clauses vars
-    appendProofNode _proof _used (Chain res clauseIds vars)
+    let node = case resolve clauses vars of
+                   []  -> Sink clauseIds vars
+                   res -> Chain res clauseIds vars
+    appendProofNode _proof _used node
 
 resolve :: [Clause] -> [Var] -> Clause
 resolve [c] [] = c
@@ -208,14 +211,15 @@ resolve (c:d:xs) (a:ys) = resolve (d':xs) ys
 
 deleted :: SolverEnv -> CClauseId -> IO ()
 deleted SolverEnv{..} c = do
-    putStrLn ("deleted: " ++ show c)
-    -- TODO
+    p <- readIORef _proof
+    VM.unsafeWrite p (fromIntegral c) Deleted
 
 readClause :: IOVector ProofNode -> ClauseId -> IO Clause
 readClause p i = VM.unsafeRead p (fromIntegral i) >>= \case
     Root  c     -> return c
     Chain c _ _ -> return c
-    Sink  _     -> error "sink"
+    Sink    _ _ -> error "MiniSat.readClause: sink"
+    Deleted     -> error "MiniSat.readClause: deleted"
 
 appendProofNode :: IORef (IOVector ProofNode) -> IORef Int -> ProofNode -> IO ()
 appendProofNode proof used node = do
