@@ -38,17 +38,18 @@ generateFormula = snd . go 0
                     then (x2, Or [f1,f2])
                     else (x2, And [f1,f2])
 
-
+main :: IO ()
 main = do
     args <- getArgs
     let file = args !! 0
-        k = read $ args !! 1        
+        k = read $ args !! 1
+        v = if length args > 2 then read $ args !! 2 else False
     parseAiger file >>= \case
         Left err  -> print err
         Right aag -> do
             let cnf = unwind aag k
                 maxVar = var $ foldr max (Pos 0) $ concat cnf
-            print cnf
+            when (v) (print cnf)
             runSolver $ do
                 replicateM_ (fromIntegral maxVar + 1) newVar
                 mapM_ addClause cnf
@@ -56,7 +57,7 @@ main = do
                 isOkay >>= \case
                     True  -> liftIO $ putStrLn "OK"
                     False -> liftIO $ putStrLn "FAIL"
-                liftIO . printLines . toList =<< proof
+                when (v) (liftIO . printLines . toList =<< proof)
 
 printLines :: Show a => [a] -> IO ()
 printLines = sequence_ . imap (\i a -> putStrLn (show i ++ ": " ++ show a))
