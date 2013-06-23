@@ -3,7 +3,7 @@
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Trans.State.Strict
-import Data.Foldable hiding (mapM_)
+import Data.Foldable hiding (mapM_,sequence_)
 import Data.Word
 import System.Environment
 
@@ -56,8 +56,16 @@ main = do
                 isOkay >>= \case
                     True  -> liftIO $ putStrLn "OK"
                     False -> liftIO $ putStrLn "FAIL"
-                liftIO . print =<< proof
+                liftIO . printLines . toList =<< proof
 
+printLines :: Show a => [a] -> IO ()
+printLines = sequence_ . imap (\i a -> putStrLn (show i ++ ": " ++ show a))
+
+imap :: (Int -> a -> b) -> [a] -> [b]
+imap = go 0
+    where 
+        go _ _ []     = []
+        go n f (x:xs) = f n x : go (n+1) f xs
 
 solveFormula f = 
     runSolver $ do

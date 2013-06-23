@@ -194,15 +194,28 @@ root SolverEnv{..} c = do
 
 chain :: SolverEnv -> Ptr CClauseId -> CInt -> Ptr CVar -> CInt -> IO ()
 chain SolverEnv{..} cs cs_size xs xs_size = do
-    clauseIds <- peekArray (fromIntegral cs_size) cs
+    clauseIds <- map fromIntegral <$> peekArray (fromIntegral cs_size) cs
     vars <- map Var <$> peekArray (fromIntegral xs_size) xs
-    let res = [] -- TODO
+    p <- readIORef _proof
+    clauses <- mapM (readClause p) clauseIds
+    let res = resolve clauses vars
     appendProofNode _proof _used (Chain res clauseIds vars)
+
+resolve :: [Clause] -> [Var] -> Clause
+resolve [c] [] = c
+resolve (c:d:xs) (a:ys) = resolve (d':xs) ys
+    where d' = filter ((/= a) . var) (c ++ d)
 
 deleted :: SolverEnv -> CClauseId -> IO ()
 deleted SolverEnv{..} c = do
     putStrLn ("deleted: " ++ show c)
     -- TODO
+
+readClause :: IOVector ProofNode -> ClauseId -> IO Clause
+readClause p i = VM.unsafeRead p (fromIntegral i) >>= \case
+    Root  c     -> return c
+    Chain c _ _ -> return c
+    Sink  _     -> error "sink"
 
 appendProofNode :: IORef (IOVector ProofNode) -> IORef Int -> ProofNode -> IO ()
 appendProofNode proof used node = do
