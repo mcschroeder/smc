@@ -9,6 +9,7 @@ module Aiger
     ) where
 
 import Control.Applicative ((<$>),(<*>))
+import Control.Monad
 import Text.ParserCombinators.Parsec
 
 import Formula
@@ -16,7 +17,7 @@ import MiniSat
 
 -----------------------------------------------------------------------
 
-type Latch = (Literal, Literal)
+type Latch = (Var, Literal)
 type Gate = (Literal, Literal, Literal)
 
 data Aiger = Aiger { maxVar  :: Var 
@@ -51,8 +52,10 @@ transition :: [Latch] -> Int -> Int -> [Clause] -> [Clause]
 transition ls n k = (map . map) (state ls n k)
 
 state :: [Latch] -> Int -> Int -> Literal -> Literal
-state ls _ 0 x = maybe x (compLit falseLit) (lookup x ls)
-state ls n k x = case lookup x ls of
+state ls _ 0 x = case lookup (var x) ls of
+    Nothing -> x
+    Just _  -> compLit falseLit x
+state ls n k x = case lookup (var x) ls of
     Nothing -> rename k n x
     Just y  -> compLit (rename (k-1) n y) x
 
@@ -86,10 +89,13 @@ rows :: Int -> Parser a -> Parser [a]
 rows n p = count n (newline >> p)
 
 latch :: Parser Latch
-latch = (,) <$> literal <*> (space >> literal)
+latch = (,) <$> variable <*> (space >> literal)
 
 gate :: Parser Gate
 gate = (,,) <$> literal <*> (space >> literal) <*> (space >> literal)
+
+variable :: Parser Var
+variable = Var . fromIntegral . flip div 2 <$> mfilter even integer
 
 literal :: Parser Literal
 literal = decodeLit . fromIntegral <$> integer
