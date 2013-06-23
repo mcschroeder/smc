@@ -50,7 +50,7 @@ main = do
                 maxVar = var $ foldr max (Pos 0) $ concat cnf
             print cnf
             runSolver $ do
-                replicateM_ (fromIntegral maxVar) newVar
+                replicateM_ (fromIntegral maxVar + 1) newVar
                 mapM_ addClause cnf
                 solve
                 isOkay >>= \case
