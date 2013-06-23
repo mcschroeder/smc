@@ -5,16 +5,18 @@ CXX = g++
 CFLAGS = -ggdb -D DEBUG
 PROF_OPTS = -rtsopts -prof -auto-all
 
-Main: minisat
+Main: clean minisat
 	ghc --make -O $(PROF_OPTS) Main.hs libminisat.dylib
 
-minisat: clean
+minisat: clean-minisat
 	cd $(MINISAT_DIR); make
 	$(CXX) $(CFLAGS) -c minisat.c
 	$(CXX) $(CFLAGS) -dynamiclib -o libminisat.dylib minisat.o \
 	  $(MINISAT_DIR)/{Solver,Proof,File}.o
 
-clean:
+clean-minisat:
 	cd $(MINISAT_DIR); make clean
-	rm -f minisat.o libminisat.dylib
-	rm -f Main Main.hi Minisat.hi Main.o
+
+clean: clean-minisat	
+	rm -f *.hi *.o *.dylib
+	rm -f Main

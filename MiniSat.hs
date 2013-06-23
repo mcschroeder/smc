@@ -135,16 +135,9 @@ nVars = fromIntegral <$> withSolver c_solver_nVars
 
 addClause :: Clause -> Solver ()
 addClause c = withSolver $ \solver -> do
-    bracket c_vecLit_new 
-            c_vecLit_delete 
-            (\veclit -> do
-                pushLits veclit c
-                c_solver_addClause solver veclit)
-    where
-        pushLits :: Ptr CVecLit -> [Literal] -> IO ()
-        pushLits p = mapM_ $ \case 
-            (Pos (Var v)) -> c_vecLit_pushVar p v 0
-            (Neg (Var v)) -> c_vecLit_pushVar p v 1
+    print c
+    withArrayLen (map lit2c c) $ \n arr -> do
+        c_solver_addClause solver arr (fromIntegral n)
 
 unlit :: Literal -> (CVar,CInt)
 unlit (Pos (Var v)) = (v,0)
@@ -186,11 +179,9 @@ proof = Solver $ do
     let p' = VM.slice 0 n p
     liftIO $ V.freeze p'
 
-root :: SolverEnv -> Ptr CVecLit -> IO ()
-root SolverEnv{..} c = do
-    let size = fromIntegral $ c_vecLit_size c
-        dat  = c_vecLit_data c
-    clause <- map c2lit <$> peekArray size dat
+root :: SolverEnv -> Ptr CLit -> CInt -> IO ()
+root SolverEnv{..} c c_size = do
+    clause <- map c2lit <$> peekArray (fromIntegral c_size) c
     appendProofNode _proof _used (Root clause)
 
 chain :: SolverEnv -> Ptr CClauseId -> CInt -> Ptr CVar -> CInt -> IO ()
@@ -237,7 +228,6 @@ appendProofNode proof used node = do
 
 data CSolver
 type CVar = CInt
-data CVecLit
 
 foreign import ccall unsafe "minisat_newSolver"
     c_solver_new :: IO (Ptr CSolver)
@@ -252,7 +242,7 @@ foreign import ccall unsafe "minisat_nVars"
     c_solver_nVars :: Ptr CSolver -> IO CInt
 
 foreign import ccall safe "minisat_addClause"
-    c_solver_addClause :: Ptr CSolver -> Ptr CVecLit -> IO ()
+    c_solver_addClause :: Ptr CSolver -> Ptr CLit -> CInt -> IO ()
 
 foreign import ccall safe "minisat_addUnit"
     c_solver_addUnit :: CVar -> CInt -> Ptr CSolver -> IO ()
@@ -273,7 +263,7 @@ foreign import ccall unsafe "minisat_okay"
 
 -----------------------------------------------------------------------
 
-type RootCallback = Ptr CVecLit -> IO ()
+type RootCallback = Ptr CLit -> CInt -> IO ()
 type ChainCallback = Ptr CClauseId -> CInt -> Ptr CVar -> CInt -> IO ()
 type DeletedCallback = CClauseId -> IO ()
 
@@ -302,24 +292,15 @@ foreign import ccall unsafe "minisat_deleteProof"
 
 -----------------------------------------------------------------------
 
-type CLit = CInt  -- TODO
+-- TODO: Storable instance for Literal & remove this nonsense
+
+type CLit = CInt  
+
+lit2c :: Literal -> CLit
+lit2c (Pos (Var v)) = v + v
+lit2c (Neg (Var v)) = v + v + 1
 
 c2lit :: CLit -> Literal
 c2lit x | x .&. 1 == 0 = Pos v
         | otherwise    = Neg v
     where v = Var $ x `shiftR` 1
-
-foreign import ccall unsafe "minisat_newVecLit"
-    c_vecLit_new :: IO (Ptr CVecLit)
-
-foreign import ccall unsafe "minisat_deleteVecLit"
-    c_vecLit_delete :: Ptr CVecLit -> IO ()
-
-foreign import ccall unsafe "minisat_vecLit_pushVar"
-    c_vecLit_pushVar :: Ptr CVecLit -> CVar -> CInt -> IO ()
-
-foreign import ccall unsafe "minisat_vecLit_size"
-    c_vecLit_size :: Ptr CVecLit -> CInt
-
-foreign import ccall unsafe "minisat_vecLit_data"
-    c_vecLit_data :: Ptr CVecLit -> Ptr CLit

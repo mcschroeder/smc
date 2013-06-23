@@ -20,9 +20,11 @@ extern "C" int minisat_nVars(Solver *solver)
 	return solver->nVars();
 }
 
-extern "C" void minisat_addClause(Solver *solver, vec<Lit> *lits)
+extern "C" void minisat_addClause(Solver *solver, Lit *ls, int n)
 {
-	solver->addClause(*lits);
+	vec<Lit> v(ls, n);
+	solver->addClause(v);
+	v.release();
 }
 
 extern "C" void minisat_addUnit(Var v1, int s1, Solver *solver)
@@ -60,7 +62,7 @@ extern "C" int minisat_okay(Solver *solver)
 
 //////////////////////////////////////////////////////////////////////////////
 
-typedef void RootCallback(const vec<Lit>& c);
+typedef void RootCallback(const Lit *c, int c_size);
 typedef void ChainCallback(const ClauseId *cs, int cs_size, 
 						   const Var      *xs, int xs_size);
 typedef void DeletedCallback(ClauseId c);
@@ -71,7 +73,7 @@ struct Traverser : public ProofTraverser {
 	DeletedCallback *deletedCallback;
 
 	void root (const vec<Lit>& c) {
-		rootCallback(c);
+		rootCallback((const Lit *)&*c, c.size());
 	}
 	void chain (const vec<ClauseId>& cs, const vec<Var>& xs) {
 		chainCallback((const ClauseId *)&*cs, cs.size(), 
@@ -101,31 +103,3 @@ extern "C" void minisat_deleteProof(Traverser *traverser, Solver *solver)
 	delete solver->proof;
 	solver->proof = NULL;
 }
-
-//////////////////////////////////////////////////////////////////////////////
-
-extern "C" vec<Lit> * minisat_newVecLit(void)
-{
-    return new vec<Lit>();
-}
-
-extern "C" void minisat_deleteVecLit(vec<Lit> *lits)
-{
-    delete lits;
-}
-
-extern "C" void minisat_vecLit_pushVar(vec<Lit> *lits, Var var, int sign)
-{
-	lits->push(sign ? ~Lit(var) : Lit(var));
-}
-
-extern "C" int minisat_vecLit_size(vec<Lit> *lits)
-{
-	return lits->size();
-}
-
-extern "C" const Lit * minisat_vecLit_data(vec<Lit> *lits)
-{
-	return *lits;
-}
-
