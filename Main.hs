@@ -41,8 +41,8 @@ generateFormula = snd . go 0
 
 main = do
     args <- getArgs
-    let k = read $ args !! 0
-        file = args !! 1
+    let file = args !! 0
+        k = read $ args !! 1        
     parseAiger file >>= \case
         Left err  -> print err
         Right aag -> do
