@@ -13,7 +13,8 @@ module MiniSat
     , isNeg
     , mapLit
     , var
-    , varEq
+    , encodeLit
+    , decodeLit
 
     , Solver
     , runSolver
@@ -81,8 +82,14 @@ var :: Literal -> Var
 var (Pos x) = x
 var (Neg x) = x
 
-varEq :: Literal -> Literal -> Bool
-varEq a b = (var a) == (var b)
+encodeLit :: Literal -> CLit
+encodeLit (Pos (Var v)) = v + v
+encodeLit (Neg (Var v)) = v + v + 1
+
+decodeLit :: CLit -> Literal
+decodeLit x | x .&. 1 == 0 = Pos v
+            | otherwise    = Neg v
+    where v = Var $ x `shiftR` 1
 
 -----------------------------------------------------------------------
 
@@ -136,27 +143,18 @@ nVars = fromIntegral <$> withSolver c_solver_nVars
 addClause :: Clause -> Solver ()
 addClause c = withSolver $ \solver -> do
     print c
-    withArrayLen (map lit2c c) $ \n arr -> do
+    withArrayLen (map encodeLit c) $ \n arr -> do
         c_solver_addClause solver arr (fromIntegral n)
 
-unlit :: Literal -> (CVar,CInt)
-unlit (Pos (Var v)) = (v,0)
-unlit (Neg (Var v)) = (v,1)
-
 addUnit :: Literal -> Solver ()
-addUnit l = withSolver (c_solver_addUnit v s)
-    where (v,s) = unlit l
+addUnit = withSolver . c_solver_addUnit . encodeLit
 
 addBinary :: Literal -> Literal -> Solver ()
-addBinary l1 l2 = withSolver (c_solver_addBinary v1 s1 v2 s2)
-    where (v1,s1) = unlit l1
-          (v2,s2) = unlit l2
+addBinary a b = withSolver $ c_solver_addBinary (encodeLit a) (encodeLit b)
 
 addTernary :: Literal -> Literal -> Literal -> Solver ()
-addTernary l1 l2 l3 = withSolver (c_solver_addTernary v1 s1 v2 s2 v3 s3)
-    where (v1,s1) = unlit l1
-          (v2,s2) = unlit l2
-          (v3,s3) = unlit l3
+addTernary a b c = 
+    withSolver $ c_solver_addTernary (encodeLit a) (encodeLit b) (encodeLit c)
 
 solve :: Solver ()
 solve = withSolver c_solver_solve
@@ -181,7 +179,7 @@ proof = Solver $ do
 
 root :: SolverEnv -> Ptr CLit -> CInt -> IO ()
 root SolverEnv{..} c c_size = do
-    clause <- map c2lit <$> peekArray (fromIntegral c_size) c
+    clause <- map decodeLit <$> peekArray (fromIntegral c_size) c
     appendProofNode _proof _used (Root clause)
 
 chain :: SolverEnv -> Ptr CClauseId -> CInt -> Ptr CVar -> CInt -> IO ()
@@ -228,6 +226,7 @@ appendProofNode proof used node = do
 
 data CSolver
 type CVar = CInt
+type CLit = CInt  
 
 foreign import ccall unsafe "minisat_newSolver"
     c_solver_new :: IO (Ptr CSolver)
@@ -245,15 +244,13 @@ foreign import ccall safe "minisat_addClause"
     c_solver_addClause :: Ptr CSolver -> Ptr CLit -> CInt -> IO ()
 
 foreign import ccall safe "minisat_addUnit"
-    c_solver_addUnit :: CVar -> CInt -> Ptr CSolver -> IO ()
+    c_solver_addUnit :: CLit -> Ptr CSolver -> IO ()
 
 foreign import ccall safe "minisat_addBinary"
-    c_solver_addBinary :: CVar -> CInt -> CVar -> CInt 
-                       -> Ptr CSolver -> IO ()
+    c_solver_addBinary :: CLit -> CLit -> Ptr CSolver -> IO ()
 
 foreign import ccall safe "minisat_addTernary"
-    c_solver_addTernary :: CVar -> CInt -> CVar -> CInt -> CVar -> CInt 
-                        -> Ptr CSolver -> IO ()
+    c_solver_addTernary :: CLit -> CLit -> CLit -> Ptr CSolver -> IO ()
 
 foreign import ccall safe "minisat_solve"
     c_solver_solve :: Ptr CSolver -> IO ()
@@ -289,18 +286,3 @@ foreign import ccall unsafe "minisat_newProof"
 
 foreign import ccall unsafe "minisat_deleteProof"
     c_solver_deleteProof :: Ptr CProofTraverser -> Ptr CSolver -> IO ()
-
------------------------------------------------------------------------
-
--- TODO: Storable instance for Literal & remove this nonsense
-
-type CLit = CInt  
-
-lit2c :: Literal -> CLit
-lit2c (Pos (Var v)) = v + v
-lit2c (Neg (Var v)) = v + v + 1
-
-c2lit :: CLit -> Literal
-c2lit x | x .&. 1 == 0 = Pos v
-        | otherwise    = Neg v
-    where v = Var $ x `shiftR` 1

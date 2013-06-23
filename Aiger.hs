@@ -92,12 +92,7 @@ gate :: Parser Gate
 gate = (,,) <$> literal <*> (space >> literal) <*> (space >> literal)
 
 literal :: Parser Literal
-literal = do
-    i <- integer
-    let v = Var $ fromIntegral $ i `div` 2
-    if even i
-        then return (Pos v)
-        else return (Neg v)
+literal = decodeLit . fromIntegral <$> integer
 
 integer :: Parser Int
 integer = read <$> many1 digit

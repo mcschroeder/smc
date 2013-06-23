@@ -27,27 +27,19 @@ extern "C" void minisat_addClause(Solver *solver, Lit *ls, int n)
 	v.release();
 }
 
-extern "C" void minisat_addUnit(Var v1, int s1, Solver *solver)
+extern "C" void minisat_addUnit(Lit a, Solver *solver)
 {
-	solver->addUnit(s1 ? ~Lit(v1) : Lit(v1));
+	solver->addUnit(a);
 }
 
-extern "C" void minisat_addBinary(Var v1, int s1, 
-								  Var v2, int s2, 
-								  Solver *solver)
+extern "C" void minisat_addBinary(Lit a, Lit b, Solver *solver)
 {
-	solver->addBinary(s1 ? ~Lit(v1) : Lit(v1),
-					  s2 ? ~Lit(v2) : Lit(v2));
+	solver->addBinary(a, b);
 }
 
-extern "C" void minisat_addTernary(Var v1, int s1, 
-								   Var v2, int s2, 
-								   Var v3, int s3, 
-								   Solver *solver)
+extern "C" void minisat_addTernary(Lit a, Lit b, Lit c, Solver *solver)
 {
-	solver->addTernary(s1 ? ~Lit(v1) : Lit(v1),
-					   s2 ? ~Lit(v2) : Lit(v2),
-					   s3 ? ~Lit(v3) : Lit(v3));
+	solver->addTernary(a, b, c);
 }
 
 extern "C" void minisat_solve(Solver *solver)
