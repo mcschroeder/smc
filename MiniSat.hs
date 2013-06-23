@@ -12,6 +12,7 @@ module MiniSat
     , neg
     , isNeg
     , mapLit
+    , compLit
     , var
     , encodeLit
     , decodeLit
@@ -78,6 +79,10 @@ mapLit :: (Var -> Var) -> Literal -> Literal
 mapLit f (Pos x) = (Pos $ f x)
 mapLit f (Neg x) = (Neg $ f x)
 
+compLit :: Literal -> Literal -> Literal
+compLit a (Pos _) = a
+compLit a (Neg _) = neg a
+
 var :: Literal -> Var
 var (Pos x) = x
 var (Neg x) = x
@@ -142,7 +147,6 @@ nVars = fromIntegral <$> withSolver c_solver_nVars
 
 addClause :: Clause -> Solver ()
 addClause c = withSolver $ \solver -> do
-    print c
     withArrayLen (map encodeLit c) $ \n arr -> do
         c_solver_addClause solver arr (fromIntegral n)
 
