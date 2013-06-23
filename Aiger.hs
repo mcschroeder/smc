@@ -28,52 +28,42 @@ data Aiger = Aiger { maxVar  :: Var
 
 -----------------------------------------------------------------------
 
-unwind :: Int -> Aiger -> [Clause]
-unwind k Aiger{..} = [[Pos 0]] ++ cnf0 ++ [[Neg p0, output]] ++ go 1 k p0
+-- [Note: True/False constants]
+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+-- We assume there are no constants (literals -0 and 0, for true
+-- and false, respectively) in the AIG, otherwise the unwinding
+-- will be incorrect. (The unwound CNF will of course contain 
+-- constants, arising from the initial states of the latches.)
+-- We could assure this precondition by doing some kind of
+-- reencoding after parsing, but this is currently not done.
+
+unwind :: Aiger -> Int -> [Clause]
+unwind Aiger{..} k = flip (++) [[rename k n (Pos p)]]
+                   $ concat 
+                   $ map ($ cnf) 
+                   $ map (transition latches n) [0..k]
     where
-        p0   = maxVar + 1
-        cnf0 = concatMap gateToCNF $ nextGates 0 constants [] gates
+        cnf = [Neg 0] : concatMap gateToCNF gates ++ [[Neg p, head outputs]]
+        p   = Var $ fromIntegral n
+        n   = fromIntegral (maxVar + 1)
 
-        output    = head outputs
-        constants = map (\(s0,s1) -> (var s0, Neg 0)) latches
-        flips     = map (\(s0,s1) -> (var s0, s1)) latches
-        flops     = map (\(s0,s1) -> (var s1, s0)) latches
+transition :: [Latch] -> Int -> Int -> [Clause] -> [Clause]
+transition ls n k = (map . map) (state ls n k)
 
-        flipflop k = if odd k then flips else flops
+state :: [Latch] -> Int -> Int -> Literal -> Literal
+state ls _ 0 x = maybe x (const falseLit) (lookup x ls)
+state ls n k x = case lookup x ls of
+    Nothing -> rename k n x
+    Just y  -> rename (k-1) n $ if isNeg x then neg y else y
 
-        go :: Int -> Int -> Var -> [Clause]
-        go _ 0 p0 = [[Pos p0]]
-        go k n p0 = [[Neg p0]] ++ cnf ++ [[Neg p, o]] ++ go (k+1) (n-1) p
-            where
-                minVar = p0
-                p      = minVar + maxVar + 1
-                o      = raiseIndex minVar output
-                cnf    = concatMap gateToCNF $ 
-                         nextGates minVar constants (flipflop k) gates
+falseLit = Pos 0
+trueLit  = Neg 0
 
-type VarMapping = [(Var,Literal)]
-
-nextGates :: Var -> VarMapping -> VarMapping -> [Gate] -> [Gate]
-nextGates minVar constants flipflop =
-    (map . mapTuple3) (raiseIndex minVar . step constants . step flipflop)
-
-step :: VarMapping -> Literal -> Literal
-step assocs x0 = case lookup (var x0) assocs of
-    Just x1 -> if isNeg x0 then neg x1 else x1
-    Nothing -> x0
-
-raiseIndex :: Var -> Literal -> Literal
-raiseIndex = mapLit . incVar
-
-incVar :: Var -> Var -> Var
-incVar _ 0 = 0
-incVar n v = v + n
+rename :: Int -> Int -> Literal -> Literal
+rename k n = mapLit (fromIntegral (k * n) +)
 
 gateToCNF :: Gate -> [Clause]
 gateToCNF (o,l0,l1) = [[neg o, l0], [neg o, l1], [o, neg l0, neg l1]]
-
-mapTuple3 :: (a -> b) -> (a,a,a) -> (b,b,b)
-mapTuple3 f (x,y,z) = (f x, f y, f z)
 
 -----------------------------------------------------------------------
 

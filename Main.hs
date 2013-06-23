@@ -46,7 +46,7 @@ main = do
     parseAiger file >>= \case
         Left err  -> print err
         Right aag -> do
-            let cnf = unwind k aag
+            let cnf = unwind aag k
                 maxVar = var $ foldr max (Pos 0) $ concat cnf
             print cnf
             runSolver $ do
