@@ -12,6 +12,7 @@ import Prelude hiding (foldr,concat)
 import MiniSat
 import Formula
 import Aiger
+import Proof
 
 
 -- TODO: remove
@@ -45,31 +46,24 @@ main = do
         k = read $ args !! 1
         v = if length args > 2 then read $ args !! 2 else False
     parseAiger file >>= \case
-        Left err  -> print err
+        Left  err -> print err
         Right aag -> do
             let cnf = unwind aag k
                 maxVar = var $ foldr max (Pos 0) $ concat cnf
             when (v) (print cnf)
-            runSolver $ do
+            p <- emptyProof
+            runSolver (mkProofLogger p) $ do
                 replicateM_ (fromIntegral maxVar + 1) newVar
                 mapM_ addClause cnf
                 solve
                 isOkay >>= \case
                     True  -> liftIO $ putStrLn "OK"
                     False -> liftIO $ putStrLn "FAIL"
-                when (v) (liftIO . printLines . toList =<< proof)
+            when (v) $ printProof p
 
-printLines :: Show a => [a] -> IO ()
-printLines = sequence_ . imap (\i a -> putStrLn (show i ++ ": " ++ show a))
 
-imap :: (Int -> a -> b) -> [a] -> [b]
-imap = go 0
-    where 
-        go _ _ []     = []
-        go n f (x:xs) = f n x : go (n+1) f xs
-
-solveFormula f = 
-    runSolver $ do
+solveFormula f =
+    runSolver undefined $ do
         addFormula f
         liftIO . print =<< nVars
         liftIO . print =<< isOkay
@@ -83,10 +77,10 @@ addFormula f = do
     replicateM_ (fromEnum $ maxVar f) newVar   -- add atom vars
     x <- tseitin f
     addUnit x
-    where 
+    where
         tseitin :: Formula Literal -> Solver Literal
         tseitin (Lit x) = return x
-        
+
         tseitin (Not f) = do
             x <- newVar
             y <- tseitin f
@@ -100,7 +94,7 @@ addFormula f = do
             mapM_ (addBinary (Pos x) . neg) ys
             addClause $ (Neg x) : ys
             return (Pos x)
-        
+
         tseitin (And fs) = do
             x <- newVar
             ys <- mapM tseitin fs
