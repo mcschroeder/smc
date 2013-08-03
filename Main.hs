@@ -13,6 +13,7 @@ import MiniSat
 import Formula
 import Aiger
 import Proof
+import Interpolation
 
 
 -- TODO: remove
@@ -59,7 +60,14 @@ main = do
                 isOkay >>= \case
                     True  -> liftIO $ putStrLn "OK"
                     False -> liftIO $ putStrLn "FAIL"
-            when (v) $ printProof p
+            when (v) $ do
+                printProof p
+
+                putStrLn "Interpolating (Symmetric)"
+                -- TODO
+                let (a,b) = splitAt 5 cnf
+                i <- interpolant Symmetric (mkLitSet a) (mkLitSet b) p
+                print i
 
 
 solveFormula f =
