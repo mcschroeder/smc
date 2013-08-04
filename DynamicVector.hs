@@ -11,6 +11,10 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as VM
 import Prelude hiding (length)
 
+-- TODO: doubling strategy as parameter
+-- (resoltuion proofs tend to be around the length of the cnf,
+-- so initializing with that & then growing w/ 100 or so could be good)
+
 -- | A mutable vector in the IO monad that grows automatically to accomodate
 -- its elements. The growth strategy is to simply double the internal size
 -- of the vector once it is full.

@@ -18,6 +18,7 @@ data Formula a = And [Formula a]
                | Or  [Formula a]
                | Not (Formula a)
                | Lit a
+               deriving (Eq)
 
 -- TODO: without this unnecessary generality, we could drop the type paramater
 instance Foldable Formula where

@@ -12,13 +12,11 @@ import Prelude hiding (foldr,concat)
 import MiniSat
 import Formula
 import Aiger
-import Proof
-import Interpolation
+--import Proof
+import Interpolation2
 
 
--- TODO: remove
-import qualified Data.Vector as V
-import qualified Data.Vector.Mutable as VM
+import qualified DynamicVector as V
 
 
 -- some example formulas
@@ -51,9 +49,15 @@ main = do
         Right aag -> do
             let cnf = unwind aag k
                 maxVar = var $ foldr max (Pos 0) $ concat cnf
-            when (v) (print cnf)
+                (a,b) = splitAt 4 cnf
+
+            when (v) $ do
+                print cnf
+                putStrLn ("A=" ++ show a)
+                putStrLn ("B=" ++ show b)
+
             p <- emptyProof
-            runSolver (mkProofLogger p) $ do
+            runSolver (mkProofLogger p a b B) $ do
                 replicateM_ (fromIntegral maxVar + 1) newVar
                 mapM_ addClause cnf
                 solve
@@ -61,13 +65,39 @@ main = do
                     True  -> liftIO $ putStrLn "OK"
                     False -> liftIO $ putStrLn "FAIL"
             when (v) $ do
-                printProof p
+                i <- extractInterpolant p
+                putStrLn ("Interpolant (McMillan) = " ++ show i)
 
-                putStrLn "Interpolating (Symmetric)"
-                -- TODO
-                let (a,b) = splitAt 5 cnf
-                i <- interpolant Symmetric (mkLitSet a) (mkLitSet b) p
-                print i
+a = read "[[1,-2],[-1,-3],[2]]" :: [Clause]
+b = read "[[-2,3],[2,4],[-4]]" :: [Clause]
+
+q0 = [Neg 2]
+q1 = [Neg 1]
+q = [q0,q1]
+t0 = [Pos 2, Pos 1, Pos 4]
+t1 = [Pos 2, Pos 1, Neg 5]
+t2 = [Pos 5, Neg 4, Neg 3]
+t = [t0,t1,t2]
+f = [Pos 3]
+
+cnf = read "[[¬0],[¬4,0],[¬4,¬1],[4,¬0,1],[¬5,4],[5]]" :: [Clause]
+
+
+interpolate :: [Clause] -> [Clause] -> IO ()
+interpolate a b = do
+    putStrLn ("A=" ++ show a)
+    putStrLn ("B=" ++ show b)
+    p <- emptyProof
+    ok <- runSolver (mkProofLogger p a b B) $ do
+        let maxVar = var $ foldr max (Pos 0) $ concat (a ++ b)
+        replicateM_ (fromIntegral maxVar + 1) newVar
+        mapM_ addClause a
+        mapM_ addClause b
+        solve
+        isOkay
+    print ok
+    i <- extractInterpolant p
+    putStrLn ("Interpolant (McMillan) = " ++ show i)
 
 
 solveFormula f =
