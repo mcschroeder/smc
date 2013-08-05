@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module Aiger 
+module Aiger
     ( Aiger(..)
     , Latch
     , Gate
@@ -20,7 +20,7 @@ import MiniSat
 type Latch = (Var, Literal)
 type Gate = (Literal, Literal, Literal)
 
-data Aiger = Aiger { maxVar  :: Var 
+data Aiger = Aiger { maxVar  :: Var
                    , inputs  :: [Literal]
                    , latches :: [Latch]
                    , outputs :: [Literal]
@@ -29,44 +29,34 @@ data Aiger = Aiger { maxVar  :: Var
 
 -----------------------------------------------------------------------
 
--- [Note: True/False constants]
--- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
--- We assume there are no constants (literals -0 and 0, for true
--- and false, respectively) in the AIG, otherwise the unwinding
--- will be incorrect. (The unwound CNF will of course contain 
--- constants, arising from the initial states of the latches.)
--- We could assure this precondition by doing some kind of
--- reencoding after parsing, but this is currently not done.
-
 unwind :: Aiger -> Int -> [Clause]
-unwind Aiger{..} k = flip (++) [[rename k n (Pos p)]]
-                   $ concat 
-                   $ map ($ cnf) 
-                   $ map (transition latches n) [0..k]
+unwind Aiger{..} k = concatMap cnf [0..k] ++ [[rename k (Pos (maxVar + 1))]]
     where
-        cnf = [Neg 0] : concatMap gateToCNF gates ++ [[Neg p, head outputs]]
-        p   = Var $ fromIntegral n
-        n   = fromIntegral (maxVar + 1)
+        cnf k = [[rename k (Neg 0)]]
+             ++ concatMap (latchToCNF k) latches
+             ++ concatMap (gateToCNF k) gates
+             ++ [map (rename k) [Neg (maxVar + 1), head outputs]]
 
-transition :: [Latch] -> Int -> Int -> [Clause] -> [Clause]
-transition ls n k = (map . map) (state ls n k)
+        latchToCNF :: Int -> Latch -> [Clause]
+        latchToCNF 0 (v,_) = [[Neg v, Pos 0], [Neg 0, Pos v]]
+        latchToCNF k (v,t) = [[neg a, b], [neg b, a]]
+            where
+                a = rename k (Pos v)
+                b = rename (k-1) t
 
-state :: [Latch] -> Int -> Int -> Literal -> Literal
-state ls _ 0 x = case lookup (var x) ls of
-    Nothing -> x
-    Just _  -> compLit falseLit x
-state ls n k x = case lookup (var x) ls of
-    Nothing -> rename k n x
-    Just y  -> compLit (rename (k-1) n y) x
+        gateToCNF :: Int -> Gate -> [Clause]
+        gateToCNF k (o,l0,l1) = [[neg a, b], [neg a, c], [a, neg b, neg c]]
+            where
+                a = rename k o
+                b = rename k l0
+                c = rename k l1
 
-falseLit = Pos 0
-trueLit  = Neg 0
+        rename :: Int -> Literal -> Literal
+        rename = mapLit . (+) . ((maxVar + 1) *) . fromIntegral
 
-rename :: Int -> Int -> Literal -> Literal
-rename k n = mapLit (fromIntegral (k * n) +)
 
-gateToCNF :: Gate -> [Clause]
-gateToCNF (o,l0,l1) = [[neg o, l0], [neg o, l1], [o, neg l0, neg l1]]
+--simple = either undefined return =<< parseAiger "simple.aag"
+--simple_err = either undefined return =<< parseAiger "simple_err.aag"
 
 -----------------------------------------------------------------------
 
@@ -76,7 +66,7 @@ parseAiger = parseFromFile aiger
 aiger :: Parser Aiger
 aiger = do
     [m,i,l,o,a] <- header
-    Aiger (fromIntegral m) 
+    Aiger (fromIntegral m)
       <$> rows i literal
       <*> rows l latch
       <*> rows o literal
