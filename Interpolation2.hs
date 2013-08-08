@@ -6,6 +6,8 @@ module Interpolation2
 
 
     , Label(..)
+
+    , simplify
     ) where
 
 import Control.Applicative
@@ -69,7 +71,7 @@ mkProofLogger (Proof p) a b s = ProofLogger root chain deleted
         root c = do
             let v = initialize label aLocal c
             V.append p v
-            putStrLn $ "root " ++ show c ++ "\t" ++ show v
+            --putStrLn $ "root " ++ show c ++ "\t" ++ show v
 
         chain :: [ClauseId] -> [Var] -> IO ()
         chain cids vars =
@@ -83,13 +85,13 @@ mkProofLogger (Proof p) a b s = ProofLogger root chain deleted
                 let v = go vs vars
                 V.append p v
 
-                putStr   $ "chain " ++ show cids ++ " " ++ show vars
-                putStrLn $ "\t" ++ show v
+                --putStr   $ "chain " ++ show cids ++ " " ++ show vars
+                --putStrLn $ "\t" ++ show v
 
         deleted :: ClauseId -> IO ()
         deleted cid = do
             V.unsafeWrite p (fromIntegral cid) undefined
-            putStrLn $ "deleted " ++ show cid
+            --putStrLn $ "deleted " ++ show cid
 
 
 initialize :: (Literal -> Label) -> (Clause -> Bool) -> Clause -> Vertex
@@ -123,29 +125,36 @@ resolve (Vertex c1 i1) (Vertex c2 i2) x = Vertex c3 i3'
 
 
 -- TODO: hack
+-- works udner the assumptions that -0 == T
+-- this is mainly for easier reading of the debug output
+-- in production, we should think up something different
 simplify :: Formula Literal -> Formula Literal
 simplify x = let x' = go x in if x' == x then x' else go x'
     where
         go (Or []) = Lit (Pos 0)  -- F
+        go (Or [Lit (Pos x), Lit (Neg y)]) | x == y = Lit (Neg 0)  -- T
+        go (Or [Lit (Neg x), Lit (Pos y)]) | x == y = Lit (Neg 0)  -- T
         go (Or [Lit (Pos 0), Lit (Pos 0)]) = Lit (Pos 0)  -- F
         go (Or [x, (Lit (Pos 0))]) = go x
         go (Or [x, (Lit (Neg 0))]) = Lit (Neg 0) -- T
         go (Or [(Lit (Pos 0)),x]) = go x
         go (Or [(Lit (Neg 0)),x]) = Lit (Neg 0) -- T
         go (Or [Lit x]) = Lit x
-        go f@(Or [Lit x, Lit y]) | x == y = Lit x
-                                 | otherwise = f
+        go f@(Or [x, y]) | x == y = x
+                         | otherwise = f
         go (Or xs) = Or (map go xs)
-        go (And [Lit (Pos 0), Lit (Neg 0)]) = Lit (Pos 0)  -- F
-        go (And [Lit (Neg 0), Lit (Pos 0)]) = Lit (Pos 0)  -- F
+        go (And [Lit x]) = Lit x
+        go (And [Lit (Pos x), Lit (Neg y)]) | x == y = Lit (Pos 0)  -- F
+        go (And [Lit (Neg x), Lit (Pos y)]) | x == y = Lit (Pos 0)  -- F
         go (And [Lit (Neg 0), x]) = go x
         go (And [x,Lit (Neg 0)]) = go x
-        go (And [Lit x]) = Lit x
-        go f@(And [Lit x, Lit y]) | x == y = Lit x
-                                  | otherwise = f
+        go f@(And [x, y]) | x == y = x
+                          | otherwise = f
+        go (And (Lit (Neg 0) : xs)) = go (And xs)
         go (And [And xs]) = go (And xs)
         go (And xs) = And (map go xs)
         go (Not (Or [])) = Lit (Neg 0)  -- T
+        go (Not x) = Not (go x)
         go x = x
 
 

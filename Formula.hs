@@ -20,6 +20,12 @@ data Formula a = And [Formula a]
                | Lit a
                deriving (Eq)
 
+instance Functor Formula where
+    fmap f (And xs) = And $ map (fmap f) xs
+    fmap f (Or  xs) = Or  $ map (fmap f) xs
+    fmap f (Not x)  = Not $ fmap f x
+    fmap f (Lit x)  = Lit (f x)
+
 -- TODO: without this unnecessary generality, we could drop the type paramater
 instance Foldable Formula where
     foldr f z (Lit x)  = f x z
@@ -52,8 +58,8 @@ maxVar = foldr max' 0
         max' (Pos a) b = max a b
         max' (Neg a) b = max a b
 
-tseitin :: Formula Literal -> Var -> (Literal, [Clause])
-tseitin f n = evalState (go f) n
+tseitin :: Var -> Formula Literal -> (Literal, [Clause])
+tseitin n f = evalState (go f) n
     where
         go :: Formula Literal -> State Var (Literal, [Clause])
         go (Lit x) = return (x, [])

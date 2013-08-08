@@ -19,6 +19,7 @@ module MiniSat
 
     , Solver
     , runSolver
+    , runSolverWithProof
     , newVar
     , nVars
     , addClause
@@ -115,12 +116,16 @@ instance Read Literal where
 newtype Solver a = Solver (ReaderT (ForeignPtr CSolver) IO a)
     deriving (Functor, Applicative, Monad, MonadIO)
 
-runSolver :: ProofLogger -> Solver a -> IO a
-runSolver proof (Solver act) = do
+runSolver :: Solver a -> IO a
+runSolver (Solver act) =
+    runReaderT act =<< (newForeignPtr p_solver_delete =<< c_solver_new)
+
+runSolverWithProof :: ProofLogger -> Solver a -> IO a
+runSolverWithProof p (Solver act) = do
     solver <- newForeignPtr p_solver_delete =<< c_solver_new
-    rootFunPtr <- mkRootFunPtr $ mkRoot $ root proof
-    chainFunPtr <- mkChainFunPtr $ mkChain $ chain proof
-    deletedFunPtr <- mkDeletedFunPtr $ mkDeleted $ deleted proof
+    rootFunPtr <- mkRootFunPtr $ mkRoot $ root p
+    chainFunPtr <- mkChainFunPtr $ mkChain $ chain p
+    deletedFunPtr <- mkDeletedFunPtr $ mkDeleted $ deleted p
     t <- withForeignPtr solver $ c_solver_newProof rootFunPtr chainFunPtr deletedFunPtr
     r <- runReaderT act solver
     withForeignPtr solver $ c_solver_deleteProof t
