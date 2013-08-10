@@ -30,7 +30,6 @@ data Aiger = Aiger { maxVar  :: Var
 
 -----------------------------------------------------------------------
 
-
 cnf2 (a,b) = [[neg a, b], [neg b, a]]
 cnf3 (a,b,c) = [[neg a, b], [neg a, c], [a, neg b, neg c]]
 
@@ -62,7 +61,13 @@ unwind' Aiger{..} k = (q, t, p)
         n = maxVar + 1
 
         latchToCNF :: Int -> Latch -> [Clause]
-        latchToCNF 0 (v,_) = [[Neg v, Pos 0], [Neg 0, Pos v]]
+        --latchToCNF 0 (v,_) = [[Neg v, Pos 0], [Neg 0, Pos v]]
+        latchToCNF 0 (v,t) = [[neg a, b], [neg b, a]]
+            where
+                a = Pos v
+                b = case lookup (var t) latches of
+                    Nothing -> t
+                    Just _  -> compLit (Pos 0) t
         latchToCNF k (v,t) = [[neg a, b], [neg b, a]]
             where
                 a = rename k (Pos v)
@@ -105,7 +110,7 @@ unwind Aiger{..} k = concatMap cnf [0..k] ++ [[rename k (Pos (maxVar + 1))]]
         rename = mapLit . (+) . ((maxVar + 1) *) . fromIntegral
 
 
-simple = either undefined return =<< parseAiger "simple.aag"
+simple_ok = either undefined return =<< parseAiger "simple_ok.aag"
 simple_err = either undefined return =<< parseAiger "simple_err.aag"
 
 -----------------------------------------------------------------------
