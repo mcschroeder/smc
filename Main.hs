@@ -20,10 +20,13 @@ main :: IO ()
 main = do
     args <- getArgs
     let file = args !! 0
+        sys = if length args > 1
+                then read (args !! 1)
+                else McMillan
     parseAiger file >>= \case
         Left  err -> print err
         Right aag -> do
-            checkAiger aag >>= \case
+            checkAiger aag sys >>= \case
                 True  -> putStrLn "\nOK"
                 False -> putStrLn "\nFAIL"
 
@@ -34,8 +37,8 @@ ken_flash_1 = either undefined return =<< parseAiger "../aiger/tip-aig-20061215/
 
 -----------------------------------------------------------------------
 
-checkAiger :: Aiger -> IO Bool
-checkAiger aag = do
+checkAiger :: Aiger -> System -> IO Bool
+checkAiger aag sys = do
     let (q0,t0,p0) = unwind aag 0
         q = fromCNF q0
         t = fromCNF t0
@@ -49,17 +52,17 @@ checkAiger aag = do
                 Or [Lit (Pos n)] = head xs
                 xs' = Or [Lit (Neg n)] : tail xs
 
-    check 0 q t b next
+    check sys 0 q t b next
 
-check :: Int -> Formula -> Formula -> Formula
+check :: System -> Int -> Formula -> Formula -> Formula
       -> (Int -> Formula -> Formula)  -- a function computing the next b
       -> IO Bool
-check k q0 t0 b next = do
+check sys k q0 t0 b next = do
     printf "check k=%d\n" k
     --printf "check3 k=%d q0=%s t0=%s b=%s\n" k (show q0) (show t0) (show b)
     let a = q0 `and` t0
     --printf "\ta = %s\n" (show a)
-    interpolate a b >>= \case
+    interpolate sys a b >>= \case
         Satisfiable -> do
             printf "\tSAT\n"
             return False
@@ -68,21 +71,21 @@ check k q0 t0 b next = do
             --printf "\tUNSAT i = %s\n" (show i)
             let q0' = i `or` q0
             --printf "\tq0' = %s\n" (show q0')
-            fix q0' t0 b >>= \case
+            fix sys q0' t0 b >>= \case
                 Unsatisfiable _ -> do
                     printf "\tFOUND FIXPOINT\n"
                     return True
                 Satisfiable -> do
                     let b' = next (k+1) b
-                    check (k+1) q0 t0 b' next
+                    check sys (k+1) q0 t0 b' next
 
-fix :: Formula -> Formula -> Formula -> IO Result
-fix q0 t0 b = do
+fix :: System -> Formula -> Formula -> Formula -> IO Result
+fix sys q0 t0 b = do
     printf "fix\n"
     --printf "fix q0=%s t0=%s b=%s\n" (show q0) (show t0) (show b)
     let a = q0 `and` t0
     --printf "\ta = %s\n" (show a)
-    interpolate a b >>= \case
+    interpolate sys a b >>= \case
         Satisfiable -> do
             printf "\tSAT\n"
             return Satisfiable
@@ -96,7 +99,7 @@ fix q0 t0 b = do
                     printf "\tq0' => q0\n"
                     return (Unsatisfiable i)
                 False -> do
-                    fix q0' t0 b
+                    fix sys q0' t0 b
 
 -----------------------------------------------------------------------
 
@@ -104,15 +107,15 @@ data Result = Satisfiable
             | Unsatisfiable Formula
             deriving (Show)
 
--- TODO: choice of system
-interpolate :: Formula -> Formula -> IO Result
-interpolate a b = do
+interpolate :: System -> Formula -> Formula -> IO Result
+interpolate sys a b = do
     --printf "interpolate %s %s\n" (show a) (show b)
-    p <- emptyProof
     let n0 = max (Formula.maxVar a) (Formula.maxVar b)  -- TODO: eliminate
         (a', n1) = toCNF a n0
         (b', n2) = toCNF b n1
-    ok <- runSolverWithProof (mkProofLogger p a' b' B) $ do
+
+    i <- newInterpolation a' b' sys
+    ok <- runSolverWithProof (mkProofLogger i) $ do
         replicateM_ (fromIntegral n2) newVar
         addUnit (Neg 0)  -- NOTE how -0 is added to simulate T
         mapM_ addClause a'
@@ -120,7 +123,7 @@ interpolate a b = do
         solve
         isOkay
     if ok then return Satisfiable
-          else Unsatisfiable <$> extractInterpolant p
+          else Unsatisfiable <$> extractInterpolant i
 
 implies :: Formula -> Formula -> IO Bool
 implies q' q = not <$> sat (q' `and` Not q)

@@ -1,14 +1,13 @@
-module Interpolation
-    ( Proof
-    , emptyProof
-    , mkProofLogger
-    , extractInterpolant
+{-# LANGUAGE RecordWildCards #-}
 
-    , Label(..)
+module Interpolation
+    ( Interpolation, System(..)
+    , newInterpolation, extractInterpolant
+    , mkProofLogger
     ) where
 
 import Control.Applicative
-import Data.IntSet (IntSet, member, fromList)
+import Data.IntSet (IntSet, notMember, fromList)
 import Data.List
 import Data.Maybe
 
@@ -38,36 +37,53 @@ _ `join` _ = AB
 
 ------------------------------------------------------------------------------
 
-newtype Proof = Proof (DynamicVector Vertex)
+data Interpolation = Interpolation {
+    proof  :: DynamicVector Vertex,
+    aLocal :: Clause -> Bool,
+    label  :: Literal -> Label
+}
+
 data Vertex = Vertex [(Literal,Label)] Formula deriving (Show)
 
-emptyProof :: IO Proof
-emptyProof = Proof <$> V.new 100 -- TODO: tweak
+data System = McMillan | Symmetric | InverseMcMillan deriving (Show, Read)
 
--- TODO: abstract away Label
-mkProofLogger :: Proof -> [Clause] -> [Clause] -> Label -> ProofLogger
-mkProofLogger (Proof p) a b s = ProofLogger root chain deleted
-    where
-        a' = mkLitSet a
+newInterpolation :: [Clause] -> [Clause] -> System -> IO Interpolation
+newInterpolation a b sys = do
+    proof <- V.new 100 -- TODO: tweak
+    let aLocal = flip elem (map sort a) . sort
+    let a' = mkLitSet a
         b' = mkLitSet b
+        label = stdLabel a' b' $ case sys of
+            McMillan        -> B
+            Symmetric       -> AB
+            InverseMcMillan -> A
 
-        label :: Literal -> Label
-        label t = let t' = (fromIntegral . encodeLit) t
-                  in if t' `member` a'
-                         then if t' `member` b'
-                                  then s
-                                  else A
-                         else B
+    return Interpolation{..}
 
-        -- TODO: elem is O(n); would a hashmap pay off?
-        aLocal :: Clause -> Bool
-        aLocal = flip elem (map sort a) . sort
+mkLitSet :: [Clause] -> IntSet
+mkLitSet = fromList . map (fromIntegral . encodeLit) . concat
 
+stdLabel :: IntSet -> IntSet -> Label -> Literal -> Label
+stdLabel a b s t =
+    let t' = (fromIntegral . encodeLit) t in
+    if t' `notMember` a
+        then B
+        else if t' `notMember` b
+            then A
+            else s
+
+extractInterpolant :: Interpolation -> IO Formula
+extractInterpolant Interpolation{..} = do
+    Vertex [] i <- V.unsafeRead proof =<< subtract 1 <$> V.length proof
+    return i
+
+-----------------------------------------------------------------------
+
+mkProofLogger :: Interpolation -> ProofLogger
+mkProofLogger Interpolation{..} = ProofLogger root chain deleted
+    where
         root :: Clause -> IO ()
-        root c = do
-            let v = initialize label aLocal c
-            V.append p v
-            --putStrLn $ "root " ++ show c ++ "\t" ++ show v
+        root c = V.append proof (initialize label aLocal c)
 
         chain :: [ClauseId] -> [Var] -> IO ()
         chain cids vars =
@@ -75,18 +91,13 @@ mkProofLogger (Proof p) a b s = ProofLogger root chain deleted
                 go [v3] _ = v3
                 go (v1:v2:vs) (x:xs) = go (v:vs) xs
                     where v = resolve v1 v2 x
-
             in do
-                vs <- mapM (V.unsafeRead p . fromIntegral) cids
+                vs <- mapM (V.unsafeRead proof . fromIntegral) cids
                 let v = go vs vars
-                V.append p v
-                --putStr   $ "chain " ++ show cids ++ " " ++ show vars
-                --putStrLn $ "\t" ++ show v
+                V.append proof v
 
         deleted :: ClauseId -> IO ()
-        deleted cid = do
-            V.unsafeWrite p (fromIntegral cid) undefined
-            --putStrLn $ "deleted " ++ show cid
+        deleted cid = V.unsafeWrite proof (fromIntegral cid) undefined
 
 
 initialize :: (Literal -> Label) -> (Clause -> Bool) -> Clause -> Vertex
@@ -112,11 +123,3 @@ resolve (Vertex c1 i1) (Vertex c2 i2) x = Vertex c3 i3
                        , i2, fromJust $ lookup (Neg x) c2 )
             Nothing -> ( i2, fromJust $ lookup (Pos x) c2
                        , i1, fromJust $ lookup (Neg x) c1 )
-
-mkLitSet :: [Clause] -> IntSet
-mkLitSet = fromList . map (fromIntegral . encodeLit) . concat
-
-extractInterpolant :: Proof -> IO Formula
-extractInterpolant (Proof p) = do
-    Vertex _ i <- V.unsafeRead p =<< subtract 1 <$> V.length p
-    return i
