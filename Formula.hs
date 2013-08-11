@@ -1,99 +1,112 @@
 module Formula
     ( Formula(..)
-    , maxVar, tseitin
+    , and, or
+    , mapFormula,foldrFormula
+    , maxVar
+    , fromCNF, toCNF, tseitin
     ) where
 
 import Control.Monad.Trans.State
-import Data.Foldable hiding (concatMap)
+import Prelude hiding (and,or)
 import Text.Read (readPrec,parens)
 import Text.ParserCombinators.ReadP (string,choice)
-import Text.ParserCombinators.ReadPrec ((<++))
-import qualified Text.ParserCombinators.ReadPrec as ReadPrec (lift)
-
-import Prelude hiding (foldr)
+import Text.ParserCombinators.ReadPrec ((<++), lift)
 
 import MiniSat
 
-data Formula a = And [Formula a]
-               | Or  [Formula a]
-               | Not (Formula a)
-               | Lit a
-               deriving (Eq)
+-----------------------------------------------------------------------
 
-instance Functor Formula where
-    fmap f (And xs) = And $ map (fmap f) xs
-    fmap f (Or  xs) = Or  $ map (fmap f) xs
-    fmap f (Not x)  = Not $ fmap f x
-    fmap f (Lit x)  = Lit (f x)
+data Formula = And [Formula]
+             | Or  [Formula]
+             | Not Formula
+             | Lit Literal
+             deriving (Eq)
 
--- TODO: without this unnecessary generality, we could drop the type paramater
-instance Foldable Formula where
-    foldr f z (Lit x)  = f x z
-    foldr f z (Not x)  = foldr f z x
-    foldr f z (Or  xs) = foldr (flip $ foldr f) z xs
-    foldr f z (And xs) = foldr (flip $ foldr f) z xs
+and :: Formula -> Formula -> Formula
+and (And xs) (And ys) = And (xs ++ ys)
+and (And xs) y        = And (y:xs)
+and x        (And ys) = And (x:ys)
+and x        y        = And [x,y]
 
-instance Show a => Show (Formula a) where
+or :: Formula -> Formula -> Formula
+or (Or xs) (Or ys) = Or (xs ++ ys)
+or (Or xs) y       = Or (y:xs)
+or x       (Or ys) = Or (x:ys)
+or x       y       = Or [x,y]
+
+mapFormula :: (Literal -> Literal) -> Formula -> Formula
+mapFormula f (And xs) = And $ map (mapFormula f) xs
+mapFormula f (Or  xs) = Or  $ map (mapFormula f) xs
+mapFormula f (Not x)  = Not $ mapFormula f x
+mapFormula f (Lit x)  = Lit $ f x
+
+foldrFormula :: (Literal -> b -> b) -> b -> Formula -> b
+foldrFormula f z (Lit x)  = f x z
+foldrFormula f z (Not x)  = foldrFormula f z x
+foldrFormula f z (Or  xs) = foldr (flip $ foldrFormula f) z xs
+foldrFormula f z (And xs) = foldr (flip $ foldrFormula f) z xs
+
+maxVar :: Formula -> Var
+maxVar = foldrFormula max' 0
+    where
+        max' (Pos a) b = max a b
+        max' (Neg a) b = max a b
+
+fromCNF :: [Clause] -> Formula
+fromCNF = And . map (Or . map Lit)
+
+-- | Given a formula and the next free variable (i.e. the lowest variable
+-- not occuring in the formula that can be used as an auxiliary variable
+-- in the Tseitin encoding) returns the formula in CNF and the new next
+-- free variable.
+toCNF :: Formula -> Var -> ([Clause], Var)
+toCNF f n = ([x]:xs, n')
+    where ((x, xs), n') = runState (tseitin f) n
+
+tseitin :: Formula -> State Var (Literal, [Clause])
+tseitin (Lit x) = return (x, [])
+tseitin (Not f) = do
+    x <- get
+    put (x+1)
+    (y,cnf1) <- tseitin f
+    let cnf2 = [[Neg x, neg y], [Pos x, y]]
+    return (Pos x, cnf1 ++ cnf2)
+tseitin (Or fs) = do
+    x <- get
+    put (x+1)
+    res <- mapM tseitin fs
+    let ys = map fst res
+        cnfs1 = concatMap snd res
+        cnf2 = map (flip (:) [Pos x] . neg) ys
+        cnf3 = [(Neg x) : ys]
+    return (Pos x, cnfs1 ++ cnf2 ++ cnf3)
+tseitin (And fs) = do
+    x <- get
+    put (x+1)
+    res <- mapM tseitin fs
+    let ys = map fst res
+        cnfs1 = concatMap snd res
+        cnf2 = map (flip (:) [Neg x]) ys
+        cnf3 = [(Pos x) : map neg ys]
+    return (Pos x, cnfs1 ++ cnf2 ++ cnf3)
+
+-----------------------------------------------------------------------
+
+instance Show Formula where
     show (Lit x)  = show x
     show (Not x)  = "¬(" ++ show x ++ ")"
     show (And xs) = '⋀' : show xs
     show (Or xs)  = '⋁' : show xs
 
-instance Read a => Read (Formula a) where
-    readPrec = parens $ do ReadPrec.lift $ choice [string "And", string "⋀"]
+instance Read Formula where
+    readPrec = parens $ do lift $ choice [string "And", string "⋀"]
                            readPrec >>= return . And
-                    <++ do ReadPrec.lift $ choice [string "Or", string "⋁"]
+                    <++ do lift $ choice [string "Or", string "⋁"]
                            readPrec >>= return . Or
-                    <++ do ReadPrec.lift $ choice [string "-(", string "¬("]
+                    <++ do lift $ choice [string "-(", string "¬("]
                            f <- readPrec
-                           ReadPrec.lift $ string ")"
+                           lift $ string ")"
                            return $ Not f
-                    <++ do ReadPrec.lift $ string "Not"
+                    <++ do lift $ string "Not"
                            readPrec >>= return . Not
                     <++ do readPrec >>= return . Lit
-
-maxVar :: Formula Literal -> Var
-maxVar = foldr max' 0
-    where
-        max' (Pos a) b = max a b
-        max' (Neg a) b = max a b
-
-tseitin :: Var -> Formula Literal -> (Literal, [Clause])
-tseitin n f = evalState (go f) n
-    where
-        go :: Formula Literal -> State Var (Literal, [Clause])
-        go (Lit x) = return (x, [])
-        go (Not f) = do
-            x <- newVar
-            (y,cnf1) <- go f
-            let cnf2 = [[Neg x, neg y], [Pos x, y]]
-            return (Pos x, cnf1 ++ cnf2)
-        go (Or fs) = do
-            x <- newVar
-            res <- mapM go fs
-            let ys = map fst res
-                cnfs1 = concatMap snd res
-                cnf2 = map (flip (:) [Pos x] . neg) ys
-                cnf3 = [(Neg x) : ys]
-            return (Pos x, cnfs1 ++ cnf2 ++ cnf3)
-        go (And fs) = do
-            x <- newVar
-            res <- mapM go fs
-            let ys = map fst res
-                cnfs1 = concatMap snd res
-                cnf2 = map (flip (:) [Neg x]) ys
-                cnf3 = [(Pos x) : map neg ys]
-            return (Pos x, cnfs1 ++ cnf2 ++ cnf3)
-
-        newVar :: State Var Var
-        newVar = do
-            x <- get
-            put (x+1)
-            return x
-
-f0 = Or [Lit (Pos 0), Lit (Pos 0)]
-f1 = Or [Lit (Pos 0), Lit (Pos 1)]
-f2 = And [Lit (Pos 0), Lit (Pos 1)]
-f3 = Or [And [Lit (Pos 0), Lit (Pos 1)], And [Lit (Pos 2), Lit (Pos 3)]]
-f4 = Or [And [Lit (Pos 0), Not (Lit (Pos 1))], Lit (Pos 2)]
-f5 = Or [And [Lit (Pos 0), Lit (Neg 1)], Lit (Pos 2)]

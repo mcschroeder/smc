@@ -1,12 +1,9 @@
 {-# LANGUAGE RecordWildCards #-}
 
 module Aiger
-    ( Aiger(..)
-    , Latch
-    , Gate
+    ( Aiger(..), Latch, Gate
     , parseAiger
     , unwind
-    , unwind'
     ) where
 
 import Control.Applicative ((<$>),(<*>))
@@ -30,30 +27,8 @@ data Aiger = Aiger { maxVar  :: Var
 
 -----------------------------------------------------------------------
 
-cnf2 (a,b) = [[neg a, b], [neg b, a]]
-cnf3 (a,b,c) = [[neg a, b], [neg a, c], [a, neg b, neg c]]
-
---aigerToCNF :: Aiger -> ([Clause],[Clause],Var)
---aigerToCNF Aiger{..} = (q,t,n)
---    where
---        q = [Neg 0] : concatMap (\(v,_) -> cnf2 (Pos v, Pos 0)) latches
---        t = concatMap cnf3 gates ++ [[Neg n, head outputs]]
---        n = maxVar + 1
-
---forward :: Var -> [Clause] -> [Clause]
---forward = map . map . mapLit . (+)
-
-
-----transition :: Aiger -> [Clause] -> [Clause] -> [Clause]
-----transition Aiger{..} a ([Pos n]:b) = [Pos n'] : a' ++ b
-----    where
-----        a' = (map . map) (mapLit (+n)) a
-----        n' = n + maxVar + 1
-
-
-
-unwind' :: Aiger -> Int -> ([Clause],[Clause],[Clause])
-unwind' Aiger{..} k = (q, t, p)
+unwind :: Aiger -> Int -> ([Clause],[Clause],[Clause])
+unwind Aiger{..} k = (q, t, p)
     where
         q = concatMap (latchToCNF k) latches
         t = concatMap (gateToCNF k) gates
@@ -61,13 +36,12 @@ unwind' Aiger{..} k = (q, t, p)
         n = maxVar + 1
 
         latchToCNF :: Int -> Latch -> [Clause]
-        --latchToCNF 0 (v,_) = [[Neg v, Pos 0], [Neg 0, Pos v]]
-        latchToCNF 0 (v,t) = [[neg a, b], [neg b, a]]
+        latchToCNF 0 (v,t) = [[Neg v, b], [neg b, Pos v]]
             where
-                a = Pos v
                 b = case lookup (var t) latches of
-                    Nothing -> t
-                    Just _  -> compLit (Pos 0) t
+                        Nothing -> t
+                        Just _  -> compLit (Pos 0) t
+
         latchToCNF k (v,t) = [[neg a, b], [neg b, a]]
             where
                 a = rename k (Pos v)
@@ -82,36 +56,6 @@ unwind' Aiger{..} k = (q, t, p)
 
         rename :: Int -> Literal -> Literal
         rename = mapLit . (+) . ((maxVar + 1) *) . fromIntegral
-
-
-unwind :: Aiger -> Int -> [Clause]
-unwind Aiger{..} k = concatMap cnf [0..k] ++ [[rename k (Pos (maxVar + 1))]]
-    where
-        cnf k = [[rename k (Neg 0)]]
-             ++ concatMap (latchToCNF k) latches
-             ++ concatMap (gateToCNF k) gates
-             ++ [map (rename k) [Neg (maxVar + 1), head outputs]]
-
-        latchToCNF :: Int -> Latch -> [Clause]
-        latchToCNF 0 (v,_) = [[Neg v, Pos 0], [Neg 0, Pos v]]
-        latchToCNF k (v,t) = [[neg a, b], [neg b, a]]
-            where
-                a = rename k (Pos v)
-                b = rename (k-1) t
-
-        gateToCNF :: Int -> Gate -> [Clause]
-        gateToCNF k (o,l0,l1) = [[neg a, b], [neg a, c], [a, neg b, neg c]]
-            where
-                a = rename k o
-                b = rename k l0
-                c = rename k l1
-
-        rename :: Int -> Literal -> Literal
-        rename = mapLit . (+) . ((maxVar + 1) *) . fromIntegral
-
-
-simple_ok = either undefined return =<< parseAiger "simple_ok.aag"
-simple_err = either undefined return =<< parseAiger "simple_err.aag"
 
 -----------------------------------------------------------------------
 

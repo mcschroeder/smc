@@ -4,10 +4,7 @@ module Interpolation2
     , mkProofLogger
     , extractInterpolant
 
-
     , Label(..)
-
-    , simplify
     ) where
 
 import Control.Applicative
@@ -42,13 +39,12 @@ _ `join` _ = AB
 ------------------------------------------------------------------------------
 
 newtype Proof = Proof (DynamicVector Vertex)
-data Vertex = Vertex LabelClause Interpolant deriving (Show)
-type Interpolant = Formula Literal
-type LabelClause = [(Literal,Label)]
+data Vertex = Vertex [(Literal,Label)] Formula deriving (Show)
 
 emptyProof :: IO Proof
 emptyProof = Proof <$> V.new 100 -- TODO: tweak
 
+-- TODO: abstract away Label
 mkProofLogger :: Proof -> [Clause] -> [Clause] -> Label -> ProofLogger
 mkProofLogger (Proof p) a b s = ProofLogger root chain deleted
     where
@@ -84,7 +80,6 @@ mkProofLogger (Proof p) a b s = ProofLogger root chain deleted
                 vs <- mapM (V.unsafeRead p . fromIntegral) cids
                 let v = go vs vars
                 V.append p v
-
                 --putStr   $ "chain " ++ show cids ++ " " ++ show vars
                 --putStrLn $ "\t" ++ show v
 
@@ -95,25 +90,21 @@ mkProofLogger (Proof p) a b s = ProofLogger root chain deleted
 
 
 initialize :: (Literal -> Label) -> (Clause -> Bool) -> Clause -> Vertex
-initialize label aLocal c = Vertex c1 i1'
+initialize label aLocal c = Vertex c1 i1
     where
         c1 = map (\t -> (t, label t)) c
         i1 | aLocal c  =       Or [Lit t | (t,l) <- c1, l .<=. B]
            | otherwise = Not $ Or [Lit t | (t,l) <- c1, l .<=. A]
 
-        i1' = simplify i1
-
 
 resolve :: Vertex -> Vertex -> Var -> Vertex
-resolve (Vertex c1 i1) (Vertex c2 i2) x = Vertex c3 i3'
+resolve (Vertex c1 i1) (Vertex c2 i2) x = Vertex c3 i3
     where
         c3 = filter (\(t,_) -> var t /= x) (c1 ++ c2)
         i3 = case l_pos `join` l_neg of
             A  -> Or [i_pos, i_neg]
             AB -> And [ Or [Lit (Pos x), i_pos], Or [Lit (Neg x), i_neg] ]
             B  -> And [i_pos, i_neg]
-
-        i3' = simplify i3
 
         -- TODO: is this necessary, or are the inputs ordered (v+,v-) anyway?
         (i_pos, l_pos, i_neg, l_neg) = case lookup (Pos x) c1 of
@@ -122,57 +113,10 @@ resolve (Vertex c1 i1) (Vertex c2 i2) x = Vertex c3 i3'
             Nothing -> ( i2, fromJust $ lookup (Pos x) c2
                        , i1, fromJust $ lookup (Neg x) c1 )
 
-
--- NOTE: for this to work, the sat solve needs to be fed
--- the unit clause (Neg 0)
--- TODO: hack
--- works udner the assumptions that -0 == T
--- this is mainly for easier reading of the debug output
--- in production, we should think up something different
-simplify :: Formula Literal -> Formula Literal
-simplify x = let x' = go x in if x' == x then x' else simplify x'
-    where
-        go (Or []) = Lit (Pos 0)  -- F
-        go (Or [Lit (Pos x), Lit (Neg y)]) | x == y = Lit (Neg 0)  -- T
-        go (Or [Lit (Neg x), Lit (Pos y)]) | x == y = Lit (Neg 0)  -- T
-        go (Or [Lit (Pos 0), Lit (Pos 0)]) = Lit (Pos 0)  -- F
-        go (Or [x, (Lit (Pos 0))]) = go x
-        go (Or [x, (Lit (Neg 0))]) = Lit (Neg 0) -- T
-        go (Or [(Lit (Pos 0)),x]) = go x
-        go (Or [(Lit (Neg 0)),x]) = Lit (Neg 0) -- T
-        go (Or [Lit x]) = Lit x
-        go f@(Or [x, y]) | x == y = x
-        go (Or xs) = Or (map go xs)
-
-        go (And []) = Lit (Pos 0)  -- F
-        go (And [Lit x]) = Lit x
-        go (And [Lit (Pos x), Lit (Neg y)]) | x == y = Lit (Pos 0)  -- F
-        go (And [Lit (Neg x), Lit (Pos y)]) | x == y = Lit (Pos 0)  -- F
-        go (And [Lit (Neg 0), x]) = go x
-        go (And [x,Lit (Neg 0)]) = go x
-        go f@(And [x, y]) | x == y = x
-        go (And (Lit (Neg 0) : xs)) = go (And xs)
-        go (And ((And xs):ys)) = go $ And (xs ++ ys)
-        go (And [x, And xs]) = go $ And (x:xs)
-        go (And xs) = And $ map go (go2 xs [])
-            where
-                go2 [] zs = reverse zs  -- preserve order
-                go2 ((And ys):xs) zs = go2 xs (ys ++ zs)
-                go2 (x:xs) zs = go2 xs (x:zs)
-
-        go (Not (Or [])) = Lit (Neg 0)  -- T
-        go (Not (Not x)) = go x
-        go (Not (Lit (Neg x))) = Lit (Pos x)
-        go (Not x) = Not (go x)
-        go x = x
-
-
 mkLitSet :: [Clause] -> IntSet
 mkLitSet = fromList . map (fromIntegral . encodeLit) . concat
 
-extractInterpolant :: Proof -> IO Interpolant
+extractInterpolant :: Proof -> IO Formula
 extractInterpolant (Proof p) = do
     Vertex _ i <- V.unsafeRead p =<< subtract 1 <$> V.length p
     return i
-
-
