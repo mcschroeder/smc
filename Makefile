@@ -2,11 +2,12 @@
 
 MINISAT_DIR = MiniSat-p_v1.14
 CXX = g++
-CFLAGS = -ggdb -D DEBUG
-PROF_OPTS = -rtsopts -prof -auto-all
+#CFLAGS = -ggdb -D DEBUG
+#PROF_OPTS = -rtsopts -prof -auto-all
+APP = smc
 
-Main: clean minisat
-	ghc --make -O $(PROF_OPTS) Main.hs libminisat.dylib
+smc: clean minisat
+	ghc --make -O $(PROF_OPTS) -o $(APP) Main.hs libminisat.dylib
 
 minisat: clean-minisat
 	cd $(MINISAT_DIR); make
@@ -17,6 +18,7 @@ minisat: clean-minisat
 clean-minisat:
 	cd $(MINISAT_DIR); make clean
 
-clean: clean-minisat	
+clean:
 	rm -f *.hi *.o *.dylib
-	rm -f Main
+	rm -f MiniSat_stub.h
+	rm -f $(APP)

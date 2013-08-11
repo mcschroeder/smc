@@ -1,6 +1,8 @@
 -- Haskell bindings for MiniSat 1.14 (proof logging version)
 -- based in part on https://github.com/msakai/haskell-minisat
 
+{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}

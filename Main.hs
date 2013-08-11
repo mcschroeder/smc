@@ -23,6 +23,7 @@ main = do
         sys = if length args > 1
                 then read (args !! 1)
                 else McMillan
+    printf "Interpolation system: %s\n" (show sys)
     parseAiger file >>= \case
         Left  err -> print err
         Right aag -> do

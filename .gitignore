@@ -3,5 +3,6 @@
 *.dylib
 MiniSat-p_v1.14/minisat
 depend.mak
-Main
+smc
+MiniSat_stub.h
 *.hi
