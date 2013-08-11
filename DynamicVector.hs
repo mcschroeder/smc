@@ -1,6 +1,7 @@
 module DynamicVector
 	( DynamicVector
 	, new, length, append, unsafeRead, unsafeWrite, freeze, imap_
+    , printVector
 	) where
 
 import Control.Applicative
@@ -71,3 +72,7 @@ imap_ f dv = go 0 f =<< V.toList <$> (V.unsafeFreeze =<< activeSlice dv)
 activeSlice :: DynamicVector a -> IO (IOVector a)
 activeSlice (DynamicVector vref nref) =
     VM.unsafeSlice 0 <$> readIORef nref <*> readIORef vref
+
+printVector :: Show a => DynamicVector a -> IO ()
+printVector v = flip imap_ v $ \i x -> do
+    putStrLn (show i ++ ": " ++ show x)

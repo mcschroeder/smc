@@ -5,7 +5,6 @@ module Proof
     , ProofNode(..)
     , emptyProof
     , mkProofLogger
-    , printProof
     ) where
 
 import Control.Applicative
@@ -49,7 +48,3 @@ resolve :: [Clause] -> [Var] -> Clause
 resolve [c] [] = c
 resolve (c:d:xs) (a:ys) = resolve (d':xs) ys
     where d' = filter ((/= a) . var) (c ++ d)
-
-printProof :: Proof -> IO ()
-printProof p = flip V.imap_ p $ \i x -> do
-    putStrLn (show i ++ ": " ++ show x)
