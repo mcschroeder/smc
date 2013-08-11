@@ -12,7 +12,7 @@ import Prelude hiding (and,or)
 import MiniSat
 import Formula
 import Aiger
-import Interpolation2
+import Interpolation
 
 -----------------------------------------------------------------------
 

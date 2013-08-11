@@ -1,127 +1,122 @@
-{-# LANGUAGE LambdaCase #-}
+module Interpolation
+    ( Proof
+    , emptyProof
+    , mkProofLogger
+    , extractInterpolant
 
-module Interpolation where
+    , Label(..)
+    ) where
 
 import Control.Applicative
 import Data.IntSet (IntSet, member, fromList)
+import Data.List
+import Data.Maybe
+
+import DynamicVector (DynamicVector)
 import qualified DynamicVector as V
+
 import MiniSat
 import Formula
-import Proof
 
-type LitSet = IntSet
+------------------------------------------------------------------------------
 
-mkLitSet :: [Clause] -> LitSet
+-- a lattice with the partial ordering '.<=.' and 'join'
+data Label = A | B | AB deriving (Eq, Show)
+
+(.<=.) :: Label -> Label -> Bool
+A  .<=. A  = True
+A  .<=. AB = True
+B  .<=. B  = True
+B  .<=. AB = True
+AB .<=. AB = True
+_  .<=. _  = False
+
+join :: Label -> Label -> Label
+A `join` A = A
+B `join` B = B
+_ `join` _ = AB
+
+------------------------------------------------------------------------------
+
+newtype Proof = Proof (DynamicVector Vertex)
+data Vertex = Vertex [(Literal,Label)] Formula deriving (Show)
+
+emptyProof :: IO Proof
+emptyProof = Proof <$> V.new 100 -- TODO: tweak
+
+-- TODO: abstract away Label
+mkProofLogger :: Proof -> [Clause] -> [Clause] -> Label -> ProofLogger
+mkProofLogger (Proof p) a b s = ProofLogger root chain deleted
+    where
+        a' = mkLitSet a
+        b' = mkLitSet b
+
+        label :: Literal -> Label
+        label t = let t' = (fromIntegral . encodeLit) t
+                  in if t' `member` a'
+                         then if t' `member` b'
+                                  then s
+                                  else A
+                         else B
+
+        -- TODO: elem is O(n); would a hashmap pay off?
+        aLocal :: Clause -> Bool
+        aLocal = flip elem (map sort a) . sort
+
+        root :: Clause -> IO ()
+        root c = do
+            let v = initialize label aLocal c
+            V.append p v
+            --putStrLn $ "root " ++ show c ++ "\t" ++ show v
+
+        chain :: [ClauseId] -> [Var] -> IO ()
+        chain cids vars =
+            let go :: [Vertex] -> [Var] -> Vertex
+                go [v3] _ = v3
+                go (v1:v2:vs) (x:xs) = go (v:vs) xs
+                    where v = resolve v1 v2 x
+
+            in do
+                vs <- mapM (V.unsafeRead p . fromIntegral) cids
+                let v = go vs vars
+                V.append p v
+                --putStr   $ "chain " ++ show cids ++ " " ++ show vars
+                --putStrLn $ "\t" ++ show v
+
+        deleted :: ClauseId -> IO ()
+        deleted cid = do
+            V.unsafeWrite p (fromIntegral cid) undefined
+            --putStrLn $ "deleted " ++ show cid
+
+
+initialize :: (Literal -> Label) -> (Clause -> Bool) -> Clause -> Vertex
+initialize label aLocal c = Vertex c1 i1
+    where
+        c1 = map (\t -> (t, label t)) c
+        i1 | aLocal c  =       Or [Lit t | (t,l) <- c1, l .<=. B]
+           | otherwise = Not $ Or [Lit t | (t,l) <- c1, l .<=. A]
+
+
+resolve :: Vertex -> Vertex -> Var -> Vertex
+resolve (Vertex c1 i1) (Vertex c2 i2) x = Vertex c3 i3
+    where
+        c3 = filter (\(t,_) -> var t /= x) (c1 ++ c2)
+        i3 = case l_pos `join` l_neg of
+            A  -> Or [i_pos, i_neg]
+            AB -> And [ Or [Lit (Pos x), i_pos], Or [Lit (Neg x), i_neg] ]
+            B  -> And [i_pos, i_neg]
+
+        -- TODO: is this necessary, or are the inputs ordered (v+,v-) anyway?
+        (i_pos, l_pos, i_neg, l_neg) = case lookup (Pos x) c1 of
+            Just l1 -> ( i1, l1
+                       , i2, fromJust $ lookup (Neg x) c2 )
+            Nothing -> ( i2, fromJust $ lookup (Pos x) c2
+                       , i1, fromJust $ lookup (Neg x) c1 )
+
+mkLitSet :: [Clause] -> IntSet
 mkLitSet = fromList . map (fromIntegral . encodeLit) . concat
 
-data Locality = A | B | AB deriving (Show)
-
-locality :: LitSet -> LitSet -> Literal -> Locality
-locality a b lit = let t = (fromIntegral . encodeLit) lit
-                   in if t `member` a
-                          then if t `member` b
-                                   then AB
-                                   else A
-                          else B
-
-data Color = Blue | Red | Purple deriving (Eq, Show)
-
--- defines a partial order
-(.<=.) :: Color -> Color -> Bool
-Blue   .<=. Blue   = True
-Blue   .<=. Purple = True
-Red    .<=. Red    = True
-Red    .<=. Purple = True
-Purple .<=. Purple = True
-_      .<=. _      = False
-
-join :: Color -> Color -> Color
-join Blue Blue = Blue
-join Red  Red  = Red
-join _    _    = Purple
-
-data System = McMillan | Symmetric | InverseMcMillan deriving (Show)
-
-color :: System -> Locality -> Color
-color McMillan        = \case { A -> Blue; AB -> Red;    B -> Red }
-color Symmetric       = \case { A -> Blue; AB -> Purple; B -> Red }
-color InverseMcMillan = \case { A -> Blue; AB -> Blue;   B -> Red }
-
-
-interpolant :: System -> LitSet -> LitSet -> Proof -> IO ([Clause])
-interpolant s a b p = do
-    i <- go =<< V.unsafeRead p =<< subtract 1 <$> V.length p
-    let (x,cnf) = tseitin i (maxVar i)
-    return $ [x] : cnf
-    where
-        res x = join (color s $ locality a b $ Pos x)
-                     (color s $ locality a b $ Neg x)
-
-        go (Root c) =
-            -- NOTE: in the base case, all literals of the clause are in the same class,
-            --       which is either A or B
-            case locality a b $ head c of
-                A -> return $ project s a b Red c
-                B -> return $ Not $ project s a b Blue c
-                AB -> error "initial vertex with shared literals"
-
-        -- TODO: this is the same as sink
-        go (Chain _ [cid1,cid2] [x]) = do
-            i1 <- go =<< V.unsafeRead p (fromIntegral cid1)
-            i2 <- go =<< V.unsafeRead p (fromIntegral cid2)
-            case res x of
-                Blue   -> return $ Or [i1,i2]
-                Purple -> return $ And [Or [Lit (Pos x), i1], Or [Lit (Neg x), i2]]
-                Red    -> return $ And [i1,i2]
-
-        -- TODO: general case: (Sink [ClauseId] [Var])
-        go (Sink [cid1,cid2] [x]) = do
-            i1 <- go =<< V.unsafeRead p (fromIntegral cid1)
-            i2 <- go =<< V.unsafeRead p (fromIntegral cid2)
-            case res x of
-                Blue   -> return $ Or [i1,i2]
-                Purple -> return $ And [Or [Lit (Pos x), i1], Or [Lit (Neg x), i2]]
-                Red    -> return $ And [i1,i2]
-
--- downward projection
-project :: System -> LitSet -> LitSet -> Color -> Clause -> Formula Literal
-project s a b c clause = Or [Lit t | t <- clause , color s (locality a b t) .<=. c]
-
-
-q0 = [Neg 2]
-q1 = [Neg 1]
-q = [q0,q1]
-t0 = [Pos 2, Pos 1, Pos 4]
-t1 = [Pos 2, Pos 1, Neg 5]
-t2 = [Pos 5, Neg 4, Neg 3]
-t = [t0,t1,t2]
-f = [Pos 3]
-
-a = mkLitSet (q ++ t)
-b = mkLitSet [f]
-
-{-
-
-two approaches:
-
-1) bottom up, starting at the sink
-        + we don't need to waste space on partial interpolants
-        + use existing proof logger
-        - no partial information -> harder to debug
-        - need to be in IO because of vector?
-        - only McMillan & Symmetric
-
-2) top down, custom proof logger:
-        + all information, better for debugging
-        + (or only as much info as we need)
-        + possibility for labelling functions that assign different colors
-          to different occurences of the same literal
-        - have to store all partial interpolants (more memory, but faster?)
-          (maybe insignificant)
-
--}
-
-
-
-
-
+extractInterpolant :: Proof -> IO Formula
+extractInterpolant (Proof p) = do
+    Vertex _ i <- V.unsafeRead p =<< subtract 1 <$> V.length p
+    return i
