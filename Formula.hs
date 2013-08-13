@@ -23,16 +23,20 @@ data Formula = And [Formula]
              deriving (Eq)
 
 and :: Formula -> Formula -> Formula
-and (And xs) (And ys) = And (xs ++ ys)
-and (And xs) y        = And (y:xs)
-and x        (And ys) = And (x:ys)
-and x        y        = And [x,y]
+and (And xs)      (And ys)      = And (xs ++ ys)
+and x             (Lit (Neg 0)) = x
+and (Lit (Neg 0)) y             = y
+and x             (And ys)      = And (x:ys)
+and (And xs)      y             = And (y:xs)
+and x             y             = And [x,y]
 
 or :: Formula -> Formula -> Formula
-or (Or xs) (Or ys) = Or (xs ++ ys)
-or (Or xs) y       = Or (y:xs)
-or x       (Or ys) = Or (x:ys)
-or x       y       = Or [x,y]
+or (Or xs)       (Or ys)       = Or (xs ++ ys)
+or x             (Lit (Pos 0)) = x
+or (Lit (Pos 0)) y             = y
+or x             (Or ys)       = Or (x:ys)
+or (Or xs)       y             = Or (y:xs)
+or x             y             = Or [x,y]
 
 mapFormula :: (Literal -> Literal) -> Formula -> Formula
 mapFormula f (And xs) = And $ map (mapFormula f) xs
