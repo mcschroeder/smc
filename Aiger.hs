@@ -8,6 +8,7 @@ module Aiger
 
 import Control.Applicative ((<$>),(<*>))
 import Control.Monad
+import Data.Maybe
 import Text.ParserCombinators.Parsec
 
 import Formula
@@ -27,35 +28,30 @@ data Aiger = Aiger { maxVar  :: Var
 
 -----------------------------------------------------------------------
 
-unwind :: Aiger -> Int -> ([Clause],[Clause],[Clause])
-unwind Aiger{..} k = (q, t, p)
+simple_ok = either undefined return =<< parseAiger "simple_ok.aag"
+simple_err = either undefined return =<< parseAiger "simple_err.aag"
+ken_flash_1 = either undefined return =<< parseAiger "../aiger/tip-aig-20061215/ken.flash^01.C.aag"
+test = either undefined return =<< parseAiger "../aiger/abc/test.aag"
+test2 = either undefined return =<< parseAiger "../aiger/abc/test2.aag"
+
+
+unwind :: Aiger -> Int -> ([Clause],[Clause])
+unwind Aiger{..} k = (t,p)
     where
-        q = concatMap (latchToCNF k) latches
-        t = concatMap (gateToCNF k) gates
-        p = (map . map) (rename k) [[Pos n], [Neg n, head outputs]]
-        n = maxVar + 1
+        t = (map . map) (resolve k) (concatMap gateToCNF gates)
+        p = [[rename k $ head outputs]]
 
-        latchToCNF :: Int -> Latch -> [Clause]
-        latchToCNF 0 (v,t) = [[Neg v, b], [neg b, Pos v]]
-            where
-                b = case lookup (var t) latches of
-                        Nothing -> t
-                        Just _  -> compLit (Pos 0) t
+        gateToCNF (a,b,c) = [[a, neg b, neg c], [neg a, b], [neg a, c]]
 
-        latchToCNF k (v,t) = [[neg a, b], [neg b, a]]
-            where
-                a = rename k (Pos v)
-                b = rename (k-1) t
+        resolve 0 t = case lookup (var t) latches of
+            Nothing -> t
+            Just _  -> compLit (Pos 0) t
 
-        gateToCNF :: Int -> Gate -> [Clause]
-        gateToCNF k (o,l0,l1) = [[neg a, b], [neg a, c], [a, neg b, neg c]]
-            where
-                a = rename k o
-                b = rename k l0
-                c = rename k l1
+        resolve k t = case lookup (var t) latches of
+            Nothing -> rename k t
+            Just t2 -> compLit (resolve (k-1) t2) t
 
-        rename :: Int -> Literal -> Literal
-        rename = mapLit . (+) . ((maxVar + 1) *) . fromIntegral
+        rename = mapLit . (+) . (maxVar *) . fromIntegral
 
 -----------------------------------------------------------------------
 

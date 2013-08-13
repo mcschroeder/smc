@@ -35,30 +35,44 @@ main = do
 simple_ok = either undefined return =<< parseAiger "simple_ok.aag"
 simple_err = either undefined return =<< parseAiger "simple_err.aag"
 ken_flash_1 = either undefined return =<< parseAiger "../aiger/tip-aig-20061215/ken.flash^01.C.aag"
+test = either undefined return =<< parseAiger "../aiger/abc/test.aag"
+test2 = either undefined return =<< parseAiger "../aiger/abc/test2.aag"
 
 -----------------------------------------------------------------------
 
 checkAiger :: Aiger -> System -> IO Bool
 checkAiger aag sys = do
-    let (q0,t0,p0) = unwind aag 0
-        q = fromCNF q0
-        t = fromCNF t0
-        b = fromCNF p0
+    let (t0,p0) = unwind aag 0
+        (t1,p1) = unwind aag 1
+        q = fromCNF $ [[Neg 0]] ++ t0
+        t = fromCNF t1
+        b = fromCNF $ p1 ++ (map . map) neg p0
 
     let next :: Int -> Formula -> Formula
         next k (And xs) = And (ys ++ xs')
             where
-                (q,t,p) = unwind aag k
-                And ys = fromCNF (p ++ t ++ q)
-                Or [Lit (Pos n)] = head xs
-                xs' = Or [Lit (Neg n)] : tail xs
+                (t,p) = unwind aag k
+                And ys = fromCNF (p ++ t)
+                Or [Lit p0] = head xs
+                xs' = Or [Lit (neg p0)] : tail xs
 
-    check sys 0 q t b next
+    let rewind :: Formula -> Formula
+        rewind = mapFormula (mapLit mod')
+            where
+                mod' 0 = 0
+                mod' v = mod (Aiger.maxVar aag) v
+
+    interpolate sys q (fromCNF p0) >>= \case
+        Satisfiable     -> return False  -- "property trivially true" ???
+        Unsatisfiable _ -> check sys 0 q t b next rewind
+
+-- TODO: find a way to reuse solver instances & just incrementally add clauses
 
 check :: System -> Int -> Formula -> Formula -> Formula
       -> (Int -> Formula -> Formula)  -- a function computing the next b
+      -> (Formula -> Formula)  -- a function rewinding to 0
       -> IO Bool
-check sys k q0 t0 b next = do
+check sys k q0 t0 b next rewind = do
     printf "check k=%d\n" k
     --printf "check3 k=%d q0=%s t0=%s b=%s\n" k (show q0) (show t0) (show b)
     let a = q0 `and` t0
@@ -68,20 +82,27 @@ check sys k q0 t0 b next = do
             printf "\tSAT\n"
             return False
         Unsatisfiable i -> do
-            printf "\tUNSAT\n"
-            --printf "\tUNSAT i = %s\n" (show i)
-            let q0' = i `or` q0
+            --printf "\tUNSAT\n"
+            printf "\tUNSAT i = %s\n" (show i)
+            check1 <- implies a i
+            check2 <- implies b (Not i)
+            printf "\t SANITY CHECK: %s %s\n" (show check1) (show check2)
+            let i' = rewind i
+            --printf "\trewind i' = %s\n" (show i')
+            let q0' = i' `or` q0
             --printf "\tq0' = %s\n" (show q0')
-            fix sys q0' t0 b >>= \case
+            fix sys q0' t0 b rewind >>= \case
                 Unsatisfiable _ -> do
                     printf "\tFOUND FIXPOINT\n"
                     return True
                 Satisfiable -> do
                     let b' = next (k+1) b
-                    check sys (k+1) q0 t0 b' next
+                    check sys (k+1) q0 t0 b' next rewind
 
-fix :: System -> Formula -> Formula -> Formula -> IO Result
-fix sys q0 t0 b = do
+fix :: System -> Formula -> Formula -> Formula
+    -> (Formula -> Formula)  -- a function rewinding to 0
+    -> IO Result
+fix sys q0 t0 b rewind = do
     printf "fix\n"
     --printf "fix q0=%s t0=%s b=%s\n" (show q0) (show t0) (show b)
     let a = q0 `and` t0
@@ -91,16 +112,21 @@ fix sys q0 t0 b = do
             printf "\tSAT\n"
             return Satisfiable
         Unsatisfiable i -> do
-            printf "\tUNSAT\n"
-            --printf "\tUNSAT i = %s\n" (show i)
-            let q0' = i `or` q0
+            --printf "\tUNSAT\n"
+            printf "\tUNSAT i = %s\n" (show i)
+            check1 <- implies a i
+            check2 <- implies b (Not i)
+            printf "\t SANITY CHECK: %s %s\n" (show check1) (show check2)
+            let i' = rewind i
+            --printf "\trewind i' = %s\n" (show i')
+            let q0' = i' `or` q0
             --printf "\tq0' = %s\n" (show q0')
             q0' `implies` q0 >>= \case
                 True -> do
                     printf "\tq0' => q0\n"
-                    return (Unsatisfiable i)
+                    return (Unsatisfiable i')
                 False -> do
-                    fix sys q0' t0 b
+                    fix sys q0' t0 b rewind
 
 -----------------------------------------------------------------------
 
@@ -118,7 +144,7 @@ interpolate sys a b = do
     i <- newInterpolation a' b' sys
     ok <- runSolverWithProof (mkProofLogger i) $ do
         replicateM_ (fromIntegral n2) newVar
-        addUnit (Neg 0)  -- NOTE how -0 is added to simulate T
+        --addUnit (Neg 0)  -- NOTE how -0 is added to simulate T
         mapM_ addClause a'
         mapM_ addClause b'
         solve
@@ -135,6 +161,7 @@ sat f = runSolver $ do
     let n = Formula.maxVar f  -- TODO: eliminate
         (f', n') = toCNF f n
     replicateM_ (fromIntegral n') newVar
+    --addUnit (Neg 0)  -- NOTE how -0 is added to simulate T
     mapM_ addClause f'
     solve
     isOkay
