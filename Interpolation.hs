@@ -8,8 +8,9 @@ module Interpolation
 
 import Control.Applicative
 import Data.IntSet (IntSet, notMember, fromList)
-import Data.List
+import Data.List hiding (and,or)
 import Data.Maybe
+import Prelude hiding (and,or)
 
 import DynamicVector (DynamicVector)
 import qualified DynamicVector as V
@@ -113,9 +114,9 @@ resolve (Vertex c1 i1) (Vertex c2 i2) x = Vertex c3 i3
     where
         c3 = filter (\(t,_) -> var t /= x) (c1 ++ c2)
         i3 = case l_pos `join` l_neg of
-            A  -> Or [i_pos, i_neg]
-            AB -> And [ Or [Lit (Pos x), i_pos], Or [Lit (Neg x), i_neg] ]
-            B  -> And [i_pos, i_neg]
+            A  -> i_pos `or` i_neg
+            AB -> (Lit (Pos x) `or` i_pos) `and` (Lit (Neg x) `or` i_neg)
+            B  -> i_pos `and` i_neg
 
         -- TODO: is this necessary, or are the inputs ordered (v+,v-) anyway?
         (i_pos, l_pos, i_neg, l_neg) = case lookup (Pos x) c1 of
