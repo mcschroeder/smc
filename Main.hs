@@ -60,7 +60,10 @@ checkAiger aag sys = do
         rewind = mapFormula (mapLit mod')
             where
                 mod' 0 = 0
-                mod' v = mod (Aiger.maxVar aag) v
+                mod' v | r == 0    = n
+                       | otherwise = r
+                    where r = v `mod` n
+                          n = Aiger.maxVar aag
 
     interpolate sys q (fromCNF p0) >>= \case
         Satisfiable     -> return False  -- "property trivially true" ???
