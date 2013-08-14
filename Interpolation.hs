@@ -112,15 +112,20 @@ initialize label aLocal c = Vertex c1 i1'
             | i1 == Not (Or []) = Lit (Neg 0)
             | otherwise         = i1
 
-
 resolve :: Vertex -> Vertex -> Var -> Vertex
-resolve (Vertex c1 i1) (Vertex c2 i2) x = Vertex c3 i3
+resolve (Vertex c1 i1) (Vertex c2 i2) x = Vertex c3 i3'
     where
         c3 = filter (\(t,_) -> var t /= x) (c1 ++ c2)
         i3 = case l_pos `join` l_neg of
             A  -> i_pos `or` i_neg
             AB -> (Lit (Pos x) `or` i_pos) `and` (Lit (Neg x) `or` i_neg)
             B  -> i_pos `and` i_neg
+
+        i3' = nubFormula i3
+            where
+                nubFormula (And xs) = And (nub xs)
+                nubFormula (Or  xs) = Or  (nub xs)
+                nubFormula x        = x
 
         -- TODO: is this necessary, or are the inputs ordered (v+,v-) anyway?
         (i_pos, l_pos, i_neg, l_neg) = case lookup (Pos x) c1 of
