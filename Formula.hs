@@ -21,7 +21,7 @@ import MiniSat
 data Formula = And [Formula]
              | Or  [Formula]
              | Not Formula
-             | Lit Literal
+             | Lit !Literal
              deriving (Eq)
 
 and :: Formula -> Formula -> Formula
