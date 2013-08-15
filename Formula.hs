@@ -1,3 +1,5 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Formula
     ( Formula(..)
     , and, or
@@ -68,8 +70,19 @@ fromCNF = And . map (Or . map Lit)
 -- in the Tseitin encoding) returns the formula in CNF and the new next
 -- free variable.
 toCNF :: Formula -> Var -> ([Clause], Var)
-toCNF f n = ([x]:xs, n')
-    where ((x, xs), n') = runState (tseitin f) n
+toCNF f n | isCNF f   = (easy f, n)
+          | otherwise = ([x]:xs, n')
+    where
+        easy (And xs) = [[y | Lit y <- ys] | Or ys <- xs]
+        ((x, xs), n') = runState (tseitin f) n
+
+isCNF :: Formula -> Bool
+isCNF (And xs) = all (\case { Or ys -> all isLit ys; _ -> False }) xs
+isCNF _        = False
+
+isLit :: Formula -> Bool
+isLit (Lit _) = True
+isLit _       = False
 
 tseitin :: Formula -> State Var (Literal, [Clause])
 tseitin (Lit x) = return (x, [])
