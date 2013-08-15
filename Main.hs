@@ -44,7 +44,7 @@ checkAiger :: Aiger -> System -> IO Bool
 checkAiger aag sys = do
     let (t0,p0) = unwind aag 0
         (t1,p1) = unwind aag 1
-        q = fromCNF $ [[Neg 0]] ++ t0
+        q = fromCNF $ {- [[Neg 0]] ++ -} t0
         t = fromCNF t1
         b = fromCNF $ [[p1]]
 
@@ -146,10 +146,10 @@ interpolate sys a b = do
     let n0 = 1 + max (Formula.maxVar a) (Formula.maxVar b)  -- TODO: eliminate
         (a', n1) = toCNF a n0
         (b', n2) = toCNF b n1
-
     i <- newInterpolation a' b' sys
     ok <- runSolverWithProof (mkProofLogger i) $ do
         replicateM_ (fromIntegral n2) newVar
+        addUnit (Neg 0)
         mapM_ addClause a'
         mapM_ addClause b'
         solve
@@ -158,7 +158,7 @@ interpolate sys a b = do
           else Unsatisfiable <$> extractInterpolant i
 
 implies :: Formula -> Formula -> IO Bool
-implies q' q = not <$> sat (Lit (Neg 0) `and` q' `and` Not q)
+implies q' q = not <$> sat (q' `and` Not q)
 
 sat :: Formula -> IO Bool
 sat f = runSolver $ do
@@ -166,6 +166,7 @@ sat f = runSolver $ do
     let n = 1 + Formula.maxVar f  -- TODO: eliminate
         (f', n') = toCNF f n
     replicateM_ (fromIntegral n') newVar
+    addUnit (Neg 0)
     mapM_ addClause f'
     solve
     isOkay
