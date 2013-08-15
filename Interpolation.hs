@@ -102,15 +102,14 @@ mkProofLogger Interpolation{..} = ProofLogger root chain deleted
 
 
 initialize :: (Literal -> Label) -> (Clause -> Bool) -> Clause -> Vertex
-initialize label aLocal c = Vertex c1 i1'
+initialize label aLocal c = Vertex c1 i1
     where
         c1 = map (\t -> (t, label t)) c
-        i1 | aLocal c  =       Or [Lit t | (t,l) <- c1, l .<=. B]
-           | otherwise = Not $ Or [Lit t | (t,l) <- c1, l .<=. A]
+        i1 | aLocal c  =  ors [Lit t       | (t,l) <- c1, l .<=. B]
+           | otherwise = ands [Lit (neg t) | (t,l) <- c1, l .<=. A]
 
-        i1' | i1 ==      Or []  = Lit (Pos 0)
-            | i1 == Not (Or []) = Lit (Neg 0)
-            | otherwise         = i1
+        ors  = foldl or  (Lit (Pos 0))
+        ands = foldl and (Lit (Neg 0))
 
 resolve :: Vertex -> Vertex -> Var -> Vertex
 resolve (Vertex c1 i1) (Vertex c2 i2) x = Vertex c3 i3'
