@@ -58,8 +58,8 @@ import Control.Exception (bracket)
 
 newtype Var = Var CVar deriving (Eq, Ord, Num, Enum, Integral, Real)
 
-data Literal = Pos {-# UNPACK #-} !Var
-             | Neg {-# UNPACK #-} !Var
+data Literal = Pos !Var
+             | Neg !Var
              deriving (Eq)
 
 instance Ord Literal where
