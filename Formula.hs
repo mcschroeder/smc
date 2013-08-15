@@ -5,7 +5,7 @@ module Formula
     , and, or
     , mapFormula,foldrFormula
     , maxVar
-    , fromCNF, toCNF, tseitin
+    , CNF, fromCNF, toCNF, tseitin
     ) where
 
 import Control.Monad.Trans.State
@@ -62,14 +62,18 @@ maxVar = foldrFormula max' 0
         max' (Pos a) b = max a b
         max' (Neg a) b = max a b
 
-fromCNF :: [Clause] -> Formula
+-----------------------------------------------------------------------
+
+type CNF = [Clause]
+
+fromCNF :: CNF -> Formula
 fromCNF = And . map (Or . map Lit)
 
 -- | Given a formula and the next free variable (i.e. the lowest variable
 -- not occuring in the formula that can be used as an auxiliary variable
 -- in the Tseitin encoding) returns the formula in CNF and the new next
 -- free variable.
-toCNF :: Formula -> Var -> ([Clause], Var)
+toCNF :: Formula -> Var -> (CNF, Var)
 toCNF f n | isCNF f   = (easy f, n)
           | otherwise = ([x]:xs, n')
     where
@@ -84,7 +88,7 @@ isLit :: Formula -> Bool
 isLit (Lit _) = True
 isLit _       = False
 
-tseitin :: Formula -> State Var (Literal, [Clause])
+tseitin :: Formula -> State Var (Literal, CNF)
 tseitin (Lit x) = return (x, [])
 tseitin (Not f) = do
     x <- get
