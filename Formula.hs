@@ -65,7 +65,7 @@ fromCNF = And . map (Or . map Lit)
 -- free variable.
 toCNF :: Formula -> Var -> ([Clause], Var)
 toCNF f n = ([x]:xs, n')
-    where ((x, xs), n') = runState (tseitin f) (n+1)
+    where ((x, xs), n') = runState (tseitin f) n
 
 tseitin :: Formula -> State Var (Literal, [Clause])
 tseitin (Lit x) = return (x, [])
