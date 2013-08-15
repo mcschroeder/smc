@@ -28,6 +28,7 @@ data Aiger = Aiger { maxVar  :: Var
 
 -----------------------------------------------------------------------
 
+-- TODO: remove
 simple_ok = either undefined return =<< parseAiger "simple_ok.aag"
 simple_err = either undefined return =<< parseAiger "simple_err.aag"
 ken_flash_1 = either undefined return =<< parseAiger "../aiger/tip-aig-20061215/ken.flash^01.C.aag"
@@ -35,11 +36,11 @@ test = either undefined return =<< parseAiger "../aiger/abc/test.aag"
 test2 = either undefined return =<< parseAiger "../aiger/abc/test2.aag"
 
 
-unwind :: Aiger -> Int -> ([Clause],[Clause])
+unwind :: Aiger -> Int -> ([Clause], Literal)
 unwind Aiger{..} k = (t,p)
     where
         t = (map . map) (resolve k) (concatMap gateToCNF gates)
-        p = [[rename k $ head outputs]]
+        p = rename k $ head outputs
 
         gateToCNF (a,b,c) = [[a, neg b, neg c], [neg a, b], [neg a, c]]
 
