@@ -3,7 +3,7 @@
 module Aiger
     ( Aiger(..), Latch, Gate
     , parseAiger
-    , unwind
+    , unwind, rewind
     ) where
 
 import Control.Applicative ((<$>),(<*>))
@@ -52,6 +52,15 @@ unwind Aiger{..} k = (t,p)
             Just t2 -> compLit (resolve (k-1) t2) t
 
         rename = mapLit . (+) . (maxVar *) . fromIntegral
+
+rewind :: Aiger -> Int -> Literal -> Literal
+rewind Aiger{..} k = mapLit mod'
+    where
+        mod' 0 = 0
+        mod' v | r == 0    = n + maxVar
+               | otherwise = n + r
+            where r = v `mod` maxVar
+                  n = maxVar * fromIntegral k
 
 -----------------------------------------------------------------------
 

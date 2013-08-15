@@ -57,13 +57,8 @@ checkAiger aag sys = do
                 xs' = Or [Lit (neg p0)] : tail xs
 
     let rewind :: Formula -> Formula
-        rewind = mapFormula (mapLit mod')
-            where
-                mod' 0 = 0
-                mod' v | r == 0    = n
-                       | otherwise = r
-                    where r = v `mod` n
-                          n = Aiger.maxVar aag
+        rewind = mapFormula (Aiger.rewind aag 1)
+
 
     interpolate sys q (fromCNF p0) >>= \case
         Satisfiable     -> return False  -- "property trivially true" ???
