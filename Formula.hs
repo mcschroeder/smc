@@ -24,14 +24,18 @@ data Formula = And [Formula]
 
 and :: Formula -> Formula -> Formula
 and x             (Lit (Neg 0)) = x
+and x             (Lit (Pos 0)) = Lit (Pos 0)
 and (Lit (Neg 0)) y             = y
+and (Lit (Pos 0)) y             = Lit (Pos 0)
 and (And xs)      (And ys)      = And (xs ++ ys)
 and x             (And ys)      = And (x:ys)
 and (And xs)      y             = And (y:xs)
 and x             y             = And [x,y]
 
 or :: Formula -> Formula -> Formula
+or x             (Lit (Neg 0)) = Lit (Neg 0)
 or x             (Lit (Pos 0)) = x
+or (Lit (Neg 0)) y             = Lit (Neg 0)
 or (Lit (Pos 0)) y             = y
 or (Or xs)       (Or ys)       = Or (xs ++ ys)
 or x             (Or ys)       = Or (x:ys)
