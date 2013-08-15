@@ -52,7 +52,9 @@ unwind Aiger{..} k = (t,p)
             Nothing -> rename k t
             Just t2 -> compLit (resolve (k-1) t2) t
 
-        rename = mapLit . (+) . (maxVar *) . fromIntegral
+        rename _ (Pos 0) = (Pos 0)
+        rename _ (Neg 0) = (Neg 0)
+        rename k t = mapLit (+ maxVar * fromIntegral k) t
 
 rewind :: Aiger -> Int -> Literal -> Literal
 rewind Aiger{..} k = mapLit mod'
