@@ -126,7 +126,7 @@ resolve (Vertex c1 i1) (Vertex c2 i2) x = Vertex c3 i3'
                 nubFormula (Or  xs) = Or  (nub xs)
                 nubFormula x        = x
 
-        -- TODO: is this necessary, or are the inputs ordered (v+,v-) anyway?
+        -- MiniSat does not guarantee the ordering of the resolvents
         (i_pos, l_pos, i_neg, l_neg) = case lookup (Pos x) c1 of
             Just l1 -> ( i1, l1
                        , i2, fromJust $ lookup (Neg x) c2 )
