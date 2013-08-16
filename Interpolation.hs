@@ -108,8 +108,6 @@ initialize label aLocal c = Vertex c1 i1
         i1 | aLocal c  =  ors [Lit t       | (t,l) <- c1, l .<=. B]
            | otherwise = ands [Lit (neg t) | (t,l) <- c1, l .<=. A]
 
-        ors  = foldl or  (Lit (Pos 0))
-        ands = foldl and (Lit (Neg 0))
 
 resolve :: Vertex -> Vertex -> Var -> Vertex
 resolve (Vertex c1 i1) (Vertex c2 i2) x = Vertex c3 i3'

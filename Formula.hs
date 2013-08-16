@@ -2,7 +2,7 @@
 
 module Formula
     ( Formula(..)
-    , and, or
+    , and, ands, or, ors
     , mapFormula,foldrFormula
     , maxVar
     , CNF, fromCNF, toCNF, tseitin
@@ -34,6 +34,10 @@ and x             (And ys)      = And (x:ys)
 and (And xs)      y             = And (y:xs)
 and x             y             = And [x,y]
 
+ands :: [Formula] -> Formula
+ands []     = Lit (Neg 0)
+ands (x:xs) = and x $ ands xs
+
 or :: Formula -> Formula -> Formula
 or x             (Lit (Neg 0)) = Lit (Neg 0)
 or x             (Lit (Pos 0)) = x
@@ -43,6 +47,10 @@ or (Or xs)       (Or ys)       = Or (xs ++ ys)
 or x             (Or ys)       = Or (x:ys)
 or (Or xs)       y             = Or (y:xs)
 or x             y             = Or [x,y]
+
+ors :: [Formula] -> Formula
+ors []     = Lit (Pos 0)
+ors (x:xs) = or x $ ors xs
 
 mapFormula :: (Literal -> Literal) -> Formula -> Formula
 mapFormula f (And xs) = And $ map (mapFormula f) xs
