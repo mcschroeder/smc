@@ -75,7 +75,7 @@ maxVar = foldrFormula max' 0
 type CNF = [Clause]
 
 fromCNF :: CNF -> Formula
-fromCNF = And . map (Or . map Lit)
+fromCNF = ands . map (ors . map Lit)
 
 -- | Given a formula and the next free variable (i.e. the lowest variable
 -- not occuring in the formula that can be used as an auxiliary variable
