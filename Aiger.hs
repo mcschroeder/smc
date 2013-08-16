@@ -60,14 +60,13 @@ unwind Aiger{..} k = (ls,gs,o)
         rename = mapLit . (+) . (maxVar *) . fromIntegral
 
 
-rewind :: Aiger -> Int -> Literal -> Literal
-rewind Aiger{..} k = mapLit mod'
+rewind :: Aiger -> Literal -> Literal
+rewind Aiger{..} = mapLit mod'
     where
         mod' 0 = 0
-        mod' v | r == 0    = n + maxVar
-               | otherwise = n + r
+        mod' v | r == 0    = maxVar
+               | otherwise = r
             where r = v `mod` maxVar
-                  n = maxVar * fromIntegral k
 
 -----------------------------------------------------------------------
 

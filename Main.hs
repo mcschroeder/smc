@@ -77,7 +77,7 @@ check aag sys k q0 t0 b maxVar = do
             --check1 <- implies a i
             --check2 <- implies (fromCNF b) (Not i)
             --printf "\t SANITY CHECK: %s %s\n" (show check1) (show check2)
-            let i' = mapFormula (rewind aag 0) i
+            let i' = mapFormula (rewind aag) i
             --printf "\t rewind i' = %s\n" (show i')
             --check1 <- implies a i'
             --check2 <- implies (fromCNF b) (Not i')
@@ -112,7 +112,7 @@ fix aag sys q0 t0 b maxVar = do
             --check1 <- implies a i
             --check2 <- implies (fromCNF b) (Not i)
             --printf "\t SANITY CHECK: %s %s\n" (show check1) (show check2)
-            let i' = mapFormula (rewind aag 0) i
+            let i' = mapFormula (rewind aag) i
             --printf "\t rewind i' = %s\n" (show i')
             --check1 <- implies a i'
             --check2 <- implies (fromCNF b) (Not i')
