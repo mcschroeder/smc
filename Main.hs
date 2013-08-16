@@ -37,38 +37,35 @@ simple_err = either undefined return =<< parseAiger "simple_err.aag"
 ken_flash_1 = either undefined return =<< parseAiger "../aiger/tip-aig-20061215/ken.flash^01.C.aag"
 test = either undefined return =<< parseAiger "../aiger/abc/test.aag"
 test2 = either undefined return =<< parseAiger "../aiger/abc/test2.aag"
+fail2 = either undefined return =<< parseAiger "fail2.aag"
+fail3 = either undefined return =<< parseAiger "fail3.aag"
+fail4 = either undefined return =<< parseAiger "fail4.aag"
+fail5 = either undefined return =<< parseAiger "fail5.aag"
 
 -----------------------------------------------------------------------
 
 checkAiger :: Aiger -> System -> IO Bool
 checkAiger aag sys = do
-    let (t0,p0) = unwind aag 0
-        (t1,p1) = unwind aag 1
-        q = fromCNF $ {- [[Neg 0]] ++ -} t0
-        t = fromCNF t1
+    let (ls0,gs0,o0) = unwind aag 0
+        (ls1,gs1,o1) = unwind aag 1
 
-    let next :: Int -> CNF -> (CNF, Var)
-        next k xs = (xs' ++ t, var p)
-            where
-                (t,p) = unwind aag k
-                xs' = (p : head xs) : tail xs
+    printf "maxVar = %s\n" (show $ Aiger.maxVar aag)
 
-    let rewind :: Formula -> Formula
-        rewind = mapFormula (Aiger.rewind aag 1)
+    let q0 = fromCNF $ ls0 ++ gs0
+        t0 = fromCNF $ ls1
+        b  = [o1] : gs1
 
-    interpolate sys q [[p0]] (var p0) >>= \case
+    interpolate sys q0 [[o0]] (var o0) >>= \case
         Satisfiable     -> return False  -- property trivially true
-        Unsatisfiable _ -> check sys 1 q t [[p1]] (var p1) next rewind
+        Unsatisfiable _ -> check aag sys 1 q0 t0 b (var o1)
 
 
-check :: System -> Int -> Formula -> Formula -> CNF -> Var
-      -> (Int -> CNF -> (CNF, Var))
-      -> (Formula -> Formula)
+check :: Aiger -> System -> Int -> Formula -> Formula -> CNF -> Var
       -> IO Bool
-check sys k q t b maxVar next rewind = do
+check aag sys k q0 t0 b maxVar = do
     printf "check k=%d\n" k
-    --printf "check3 k=%d q=%s t=%s b=%s\n" k (show q) (show t) (show b)
-    let a = q `and` t
+    --printf "check3 k=%d q0=%s t0=%s b=%s\n" k (show q0) (show t0) (show b)
+    let a = q0 `and` t0
     --printf "\ta = %s\n" (show a)
     interpolate sys a b maxVar >>= \case
         Satisfiable -> do
@@ -80,25 +77,30 @@ check sys k q t b maxVar next rewind = do
             --check1 <- implies a i
             --check2 <- implies (fromCNF b) (Not i)
             --printf "\t SANITY CHECK: %s %s\n" (show check1) (show check2)
-            let i' = rewind i
-            let q' = i' `or` q
-            --printf "\tq' = %s\n" (show q')
-            fix sys q' t b maxVar rewind >>= \case
+            let i' = mapFormula (rewind aag 0) i
+            --printf "\t rewind i' = %s\n" (show i')
+            --check1 <- implies a i'
+            --check2 <- implies (fromCNF b) (Not i')
+            --printf "\t SANITY CHECK: %s %s\n" (show check1) (show check2)
+            let q0' = i' `or` q0
+            --printf "\tq0' = %s\n" (show q0')
+            fix aag sys q0' t0 b maxVar >>= \case
                 Unsatisfiable _ -> do
                     printf "\tFOUND FIXPOINT\n"
                     return True
                 Satisfiable -> do
-                    let (b', maxVar') = next (k+1) b
-                    check sys (k+1) q t b' maxVar' next rewind
+                    let (ls,gs,o) = unwind aag (k+1)
+                        t0' = t0 `and` (fromCNF ls)
+                        b' = (o : head b) : tail b ++ gs
+                    check aag sys (k+1) q0 t0' b' (var o)
 
 
-fix :: System -> Formula -> Formula -> CNF -> Var
-    -> (Formula -> Formula)
+fix :: Aiger -> System -> Formula -> Formula -> CNF -> Var
     -> IO Result
-fix sys q t b maxVar rewind = do
+fix aag sys q0 t0 b maxVar = do
     printf "fix\n"
-    --printf "fix q=%s t=%s b=%s\n" (show q) (show t) (show b)
-    let a = q `and` t
+    --printf "fix q0=%s t0=%s b=%s\n" (show q0) (show t0) (show b)
+    let a = q0 `and` t0
     --printf "\ta = %s\n" (show a)
     interpolate sys a b maxVar >>= \case
         Satisfiable -> do
@@ -110,15 +112,19 @@ fix sys q t b maxVar rewind = do
             --check1 <- implies a i
             --check2 <- implies (fromCNF b) (Not i)
             --printf "\t SANITY CHECK: %s %s\n" (show check1) (show check2)
-            let i' = rewind i
-            let q' = i' `or` q
-            --printf "\tq' = %s\n" (show q')
-            q' `implies` q >>= \case
+            let i' = mapFormula (rewind aag 0) i
+            --printf "\t rewind i' = %s\n" (show i')
+            --check1 <- implies a i'
+            --check2 <- implies (fromCNF b) (Not i')
+            --printf "\t SANITY CHECK: %s %s\n" (show check1) (show check2)
+            let q0' = i' `or` q0
+            --printf "\tq0' = %s\n" (show q0')
+            q0' `implies` q0 >>= \case
                 True -> do
-                    printf "\tq' => q\n"
+                    printf "\tq0' => q0\n"
                     return (Unsatisfiable i')
                 False -> do
-                    fix sys q' t b maxVar rewind
+                    fix aag sys q0' t0 b maxVar
 
 -----------------------------------------------------------------------
 
@@ -134,6 +140,8 @@ interpolate sys a b maxVar = do
         addUnit (Neg 0)
         mapM_ addClause a'
         mapM_ addClause b
+
+        --liftIO $ printf "interpolate a'=%s b=%s\n" (show a') (show b)
         solve
         isOkay
     if ok then return Satisfiable

@@ -35,26 +35,30 @@ ken_flash_1 = either undefined return =<< parseAiger "../aiger/tip-aig-20061215/
 test = either undefined return =<< parseAiger "../aiger/abc/test.aag"
 test2 = either undefined return =<< parseAiger "../aiger/abc/test2.aag"
 
-
-unwind :: Aiger -> Int -> ([Clause], Literal)
-unwind Aiger{..} k = (t,p)
+unwind :: Aiger -> Int -> ([Clause],[Clause],Literal)
+unwind Aiger{..} k = (ls,gs,o)
     where
-        t = (map . map) (resolve k) (concatMap gateToCNF gates)
-        p = rename k $ head outputs
+        ls = concatMap (latchToCNF k) latches
+        gs = concatMap (gateToCNF k) gates
+        o = rename k $ head outputs
 
-        gateToCNF (a,b,c) = [[a, neg b, neg c], [neg a, b], [neg a, c]]
+        latchToCNF :: Int -> Latch -> [Clause]
+        latchToCNF 0 (v,t) = [[Neg v]]
+        latchToCNF k (v,t) = [[neg a, b], [a, neg b]]
+            where
+                a = rename k (Pos v)
+                b = rename (k-1) t
 
-        resolve 0 t = case lookup (var t) latches of
-            Nothing -> t
-            Just _  -> compLit (Pos 0) t
+        gateToCNF :: Int -> Gate -> [Clause]
+        gateToCNF k (x,y,z) = [[a, neg b, neg c], [neg a, b], [neg a, c]]
+            where
+                a = rename k x
+                b = rename k y
+                c = rename k z
 
-        resolve k t = case lookup (var t) latches of
-            Nothing -> rename k t
-            Just t2 -> compLit (resolve (k-1) t2) t
+        rename :: Int -> Literal -> Literal
+        rename = mapLit . (+) . (maxVar *) . fromIntegral
 
-        rename _ (Pos 0) = (Pos 0)
-        rename _ (Neg 0) = (Neg 0)
-        rename k t = mapLit (+ maxVar * fromIntegral k) t
 
 rewind :: Aiger -> Int -> Literal -> Literal
 rewind Aiger{..} k = mapLit mod'
