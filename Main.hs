@@ -46,10 +46,10 @@ fail5 = either undefined return =<< parseAiger "fail5.aag"
 
 checkAiger :: Aiger -> System -> IO Bool
 checkAiger aag sys = do
-    let (ls0,gs0,o0) = unwind aag 0
-        (ls1,gs1,o1) = unwind aag 1
+    let (ls0,gs0,o0,_) = unwind aag 0
+        (ls1,gs1,o1,n) = unwind aag 1
 
-    printf "maxVar = %s\n" (show $ Aiger.maxVar aag)
+    printf "maxVar = %s\n" (show n)
 
     let q0 = fromCNF $ ls0 ++ gs0
         t0 = fromCNF $ ls1
@@ -57,7 +57,7 @@ checkAiger aag sys = do
 
     interpolate sys q0 [[o0]] (var o0) >>= \case
         Satisfiable     -> return False  -- property trivially true
-        Unsatisfiable _ -> check aag sys 1 q0 t0 b (var o1)
+        Unsatisfiable _ -> check aag sys 1 q0 t0 b n
 
 
 check :: Aiger -> System -> Int -> Formula -> Formula -> CNF -> Var
@@ -89,10 +89,10 @@ check aag sys k q0 t0 b maxVar = do
                     printf "\tFOUND FIXPOINT\n"
                     return True
                 Satisfiable -> do
-                    let (ls,gs,o) = unwind aag (k+1)
+                    let (ls,gs,o,n') = unwind aag (k+1)
                         t0' = t0 `and` (fromCNF ls)
                         b' = (o : head b) : tail b ++ gs
-                    check aag sys (k+1) q0 t0' b' (var o)
+                    check aag sys (k+1) q0 t0' b' n'
 
 
 fix :: Aiger -> System -> Formula -> Formula -> CNF -> Var

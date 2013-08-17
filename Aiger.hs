@@ -35,15 +35,16 @@ ken_flash_1 = either undefined return =<< parseAiger "../aiger/tip-aig-20061215/
 test = either undefined return =<< parseAiger "../aiger/abc/test.aag"
 test2 = either undefined return =<< parseAiger "../aiger/abc/test2.aag"
 
-unwind :: Aiger -> Int -> ([Clause],[Clause],Literal)
-unwind Aiger{..} k = (ls,gs,o)
+unwind :: Aiger -> Int -> ([Clause],[Clause],Literal,Var)
+unwind Aiger{..} k = (ls,gs,o,n)
     where
         ls = concatMap (latchToCNF k) latches
         gs = concatMap (gateToCNF k) gates
         o = rename k $ head outputs
+        n = maxVar * fromIntegral (k+1)
 
         latchToCNF :: Int -> Latch -> [Clause]
-        latchToCNF 0 (v,t) = [[Neg v]]
+        latchToCNF 0 (v,_) = [[Neg v]]
         latchToCNF k (v,t) = [[neg a, b], [a, neg b]]
             where
                 a = rename k (Pos v)
