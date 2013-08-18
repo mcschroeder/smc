@@ -10,6 +10,7 @@ import Control.Applicative
 import Data.IntSet (IntSet, notMember, fromList)
 import Data.List hiding (and,or)
 import Data.Maybe
+import qualified Data.Set as Set
 import Prelude hiding (and,or)
 
 import DynamicVector (DynamicVector)
@@ -51,7 +52,10 @@ data System = McMillan | Symmetric | InverseMcMillan deriving (Show, Read)
 newInterpolation :: [Clause] -> [Clause] -> System -> IO Interpolation
 newInterpolation a b sys = do
     proof <- V.new 100 -- TODO: tweak
-    let aLocal = flip elem (map sort a) . sort
+
+    let sortedA = Set.fromList $ map sort a
+    let aLocal = flip Set.member sortedA . sort
+
     let a' = mkLitSet a
         b' = mkLitSet b
         label = stdLabel a' b' $ case sys of
