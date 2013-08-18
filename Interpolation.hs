@@ -8,6 +8,9 @@ module Interpolation
     , ClauseSet
     , mkClauseSet, clauseSetUnionCNF, clauseSetMember, clauseSetInsert
     , forClauses_
+
+    , LitSet
+    , mkLitSet, litSetUnionCNF, litSetNotMember
     ) where
 
 import Control.Applicative
@@ -66,11 +69,17 @@ forClauses_ (ClauseSet cs) = for_ cs
 
 ------------------------------------------------------------------------------
 
-mkLitSet :: [Clause] -> IntSet
-mkLitSet = IntSet.fromList . map (fromIntegral . encodeLit) . concat
+newtype LitSet = LitSet IntSet
 
-mkLitSet' :: ClauseSet -> IntSet
-mkLitSet' (ClauseSet cs) = mkLitSet $ Set.toList cs
+mkLitSet :: CNF -> LitSet
+mkLitSet = LitSet . IntSet.fromList . map (fromIntegral . encodeLit) . concat
+
+litSetUnionCNF :: LitSet -> CNF -> LitSet
+litSetUnionCNF (LitSet ts1) cnf = LitSet $ IntSet.union ts1 ts2
+    where (LitSet ts2) = mkLitSet cnf
+
+litSetNotMember :: Literal -> LitSet -> Bool
+litSetNotMember t (LitSet ts) = IntSet.notMember (fromIntegral $ encodeLit t) ts
 
 ------------------------------------------------------------------------------
 
@@ -84,15 +93,13 @@ data Vertex = Vertex [(Literal,Label)] Formula deriving (Show)
 
 data System = McMillan | Symmetric | InverseMcMillan deriving (Show, Read)
 
-newInterpolation :: [Clause] -> ClauseSet -> System -> IO Interpolation
-newInterpolation a b sys = do
+newInterpolation :: LitSet -> LitSet -> ClauseSet -> System -> IO Interpolation
+newInterpolation aLits bLits bClauses sys = do
     proof <- V.new 100 -- TODO: tweak
 
-    let bLocal = flip clauseSetMember b
+    let bLocal = flip clauseSetMember bClauses
 
-    let a' = mkLitSet a
-        b' = mkLitSet' b
-        label = stdLabel a' b' $ case sys of
+    let label = stdLabel aLits bLits $ case sys of
             McMillan        -> B
             Symmetric       -> AB
             InverseMcMillan -> A
@@ -100,12 +107,11 @@ newInterpolation a b sys = do
     return Interpolation{..}
 
 
-stdLabel :: IntSet -> IntSet -> Label -> Literal -> Label
+stdLabel :: LitSet -> LitSet -> Label -> Literal -> Label
 stdLabel a b s t =
-    let t' = (fromIntegral . encodeLit) t in
-    if t' `IntSet.notMember` a
+    if litSetNotMember t a
         then B
-        else if t' `IntSet.notMember` b
+        else if litSetNotMember t b
             then A
             else s
 
