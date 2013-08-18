@@ -28,13 +28,6 @@ data Aiger = Aiger { maxVar  :: Var
 
 -----------------------------------------------------------------------
 
--- TODO: remove
-simple_ok = either undefined return =<< parseAiger "simple_ok.aag"
-simple_err = either undefined return =<< parseAiger "simple_err.aag"
-ken_flash_1 = either undefined return =<< parseAiger "../aiger/tip-aig-20061215/ken.flash^01.C.aag"
-test = either undefined return =<< parseAiger "../aiger/abc/test.aag"
-test2 = either undefined return =<< parseAiger "../aiger/abc/test2.aag"
-
 unwind :: Aiger -> Int -> ([Clause],[Clause],Literal,Var)
 unwind Aiger{..} k = (ls,gs,o,n)
     where

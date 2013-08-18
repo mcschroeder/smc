@@ -31,17 +31,6 @@ main = do
                 True  -> putStrLn "\nOK"
                 False -> putStrLn "\nFAIL"
 
--- TODO: remove
-simple_ok = either undefined return =<< parseAiger "simple_ok.aag"
-simple_err = either undefined return =<< parseAiger "simple_err.aag"
-ken_flash_1 = either undefined return =<< parseAiger "../aiger/tip-aig-20061215/ken.flash^01.C.aag"
-test = either undefined return =<< parseAiger "../aiger/abc/test.aag"
-test2 = either undefined return =<< parseAiger "../aiger/abc/test2.aag"
-fail2 = either undefined return =<< parseAiger "fail2.aag"
-fail3 = either undefined return =<< parseAiger "fail3.aag"
-fail4 = either undefined return =<< parseAiger "fail4.aag"
-fail5 = either undefined return =<< parseAiger "fail5.aag"
-
 -----------------------------------------------------------------------
 
 checkAiger :: Aiger -> System -> IO Bool
@@ -62,26 +51,15 @@ check :: Aiger -> System -> Int -> Formula -> Formula -> CNF -> Var
       -> IO Bool
 check aag sys k q0 t0 b maxVar = do
     printf "check k=%d\n" k
-    --printf "check3 k=%d q0=%s t0=%s b=%s\n" k (show q0) (show t0) (show b)
     let a = q0 `and` t0
-    --printf "\ta = %s\n" (show a)
     interpolate sys a b maxVar >>= \case
         Satisfiable -> do
             printf "\tSAT\n"
             return False
         Unsatisfiable i -> do
             printf "\tUNSAT\n"
-            --printf "\tUNSAT i = %s\n" (show i)
-            --check1 <- implies a i
-            --check2 <- implies (fromCNF b) (Not i)
-            --printf "\t SANITY CHECK: %s %s\n" (show check1) (show check2)
             let i' = mapFormula (rewind aag) i
-            --printf "\t rewind i' = %s\n" (show i')
-            --check1 <- implies a i'
-            --check2 <- implies (fromCNF b) (Not i')
-            --printf "\t SANITY CHECK: %s %s\n" (show check1) (show check2)
             let q0' = i' `or` q0
-            --printf "\tq0' = %s\n" (show q0')
             fix aag sys q0' t0 b maxVar >>= \case
                 Unsatisfiable _ -> do
                     printf "\tFOUND FIXPOINT\n"
@@ -96,26 +74,15 @@ fix :: Aiger -> System -> Formula -> Formula -> CNF -> Var
     -> IO Result
 fix aag sys q0 t0 b maxVar = do
     printf "fix\n"
-    --printf "fix q0=%s t0=%s b=%s\n" (show q0) (show t0) (show b)
     let a = q0 `and` t0
-    --printf "\ta = %s\n" (show a)
     interpolate sys a b maxVar >>= \case
         Satisfiable -> do
             printf "\tSAT\n"
             return Satisfiable
         Unsatisfiable i -> do
             printf "\tUNSAT\n"
-            --printf "\tUNSAT i = %s\n" (show i)
-            --check1 <- implies a i
-            --check2 <- implies (fromCNF b) (Not i)
-            --printf "\t SANITY CHECK: %s %s\n" (show check1) (show check2)
             let i' = mapFormula (rewind aag) i
-            --printf "\t rewind i' = %s\n" (show i')
-            --check1 <- implies a i'
-            --check2 <- implies (fromCNF b) (Not i')
-            --printf "\t SANITY CHECK: %s %s\n" (show check1) (show check2)
             let q0' = i' `or` q0
-            --printf "\tq0' = %s\n" (show q0')
             q0' `implies` q0 >>= \case
                 True -> do
                     printf "\tq0' => q0\n"
@@ -129,7 +96,6 @@ data Result = Satisfiable | Unsatisfiable Formula deriving (Show)
 
 interpolate :: System -> Formula -> CNF -> Var -> IO Result
 interpolate sys a b maxVar = do
-    --printf "interpolate %s %s\n" (show a) (show b)
     let (a', n1) = toCNF a (maxVar + 1)
     i <- newInterpolation a' b sys
     ok <- runSolverWithProof (mkProofLogger i) $ do
@@ -137,8 +103,6 @@ interpolate sys a b maxVar = do
         addUnit (Neg 0)
         mapM_ addClause a'
         mapM_ addClause b
-
-        --liftIO $ printf "interpolate a'=%s b=%s\n" (show a') (show b)
         solve
         isOkay
     if ok then return Satisfiable
@@ -149,7 +113,6 @@ implies q' q = not <$> sat (q' `and` Not q)
 
 sat :: Formula -> IO Bool
 sat f = runSolver $ do
-    --liftIO $ printf "sat %s\n" (show f)
     let n = 1 + Formula.maxVar f  -- TODO: eliminate
         (f', n') = toCNF f n
     replicateM_ (fromIntegral n') newVar
