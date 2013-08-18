@@ -60,10 +60,7 @@ newtype Var = Var CVar deriving (Eq, Ord, Num, Enum, Integral, Real)
 
 data Literal = Pos !Var
              | Neg !Var
-             deriving (Eq)
-
-instance Ord Literal where
-    compare a b = compare (var a) (var b)
+             deriving (Eq, Ord)
 
 type Clause = [Literal]
 
