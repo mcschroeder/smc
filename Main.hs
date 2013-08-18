@@ -43,23 +43,21 @@ checkAiger aag sys = do
 
     let q0 = fromCNF $ ls0
         t0 = fromCNF $ ls1 ++ gs0
-        b0 = [o0]:gs0
-        b1 = [o1]:gs1
 
-    let bClauses0 = mkClauseSet b0
-        bClauses1 = mkClauseSet b1
+    let b0 = mkClauseSet gs0
+        b1 = mkClauseSet gs1
 
-    interpolate sys q0 b0 bClauses0 n0 >>= \case
+    interpolate sys q0 b0 [o0] n0 >>= \case
         Satisfiable     -> return False  -- property trivially true
-        Unsatisfiable _ -> check aag sys 1 q0 t0 b1 bClauses1 n1
+        Unsatisfiable _ -> check aag sys 1 q0 t0 b1 [o1] n1
 
 
-check :: Aiger -> System -> Int -> Formula -> Formula -> CNF -> ClauseSet -> Var
+check :: Aiger -> System -> Int -> Formula -> Formula -> ClauseSet -> Clause -> Var
       -> IO Bool
-check aag sys k q0 t0 b bClauses maxVar = do
+check aag sys k q0 t0 b p maxVar = do
     printf "check k=%d\n" k
     let a = q0 `and` t0
-    interpolate sys a b bClauses maxVar >>= \case
+    interpolate sys a b p maxVar >>= \case
         Satisfiable -> do
             printf "\tSAT\n"
             return False
@@ -67,23 +65,22 @@ check aag sys k q0 t0 b bClauses maxVar = do
             printf "\tUNSAT\n"
             let i' = mapFormula (rewind aag) i
             let q0' = i' `or` q0
-            fix aag sys q0' t0 b bClauses maxVar >>= \case
+            fix aag sys q0' t0 b p maxVar >>= \case
                 Unsatisfiable _ -> do
                     printf "\tFOUND FIXPOINT\n"
                     return True
                 Satisfiable -> do
                     let (ls,gs,o,n') = unwind aag (k+1)
-                        b' = (o : head b) : tail b ++ gs ++ ls
-                        bClauses' = clauseSetUnionCNF bClauses b'
-                    check aag sys (k+1) q0 t0 b' bClauses' n'
+                        b' = clauseSetUnionCNF b (gs ++ ls)
+                    check aag sys (k+1) q0 t0 b' (o:p) n'
 
 
-fix :: Aiger -> System -> Formula -> Formula -> CNF -> ClauseSet -> Var
+fix :: Aiger -> System -> Formula -> Formula -> ClauseSet -> Clause -> Var
     -> IO Result
-fix aag sys q0 t0 b bClauses maxVar = do
+fix aag sys q0 t0 b p maxVar = do
     printf "fix\n"
     let a = q0 `and` t0
-    interpolate sys a b bClauses maxVar >>= \case
+    interpolate sys a b p maxVar >>= \case
         Satisfiable -> do
             printf "\tSAT\n"
             return Satisfiable
@@ -96,21 +93,22 @@ fix aag sys q0 t0 b bClauses maxVar = do
                     printf "\tq0' => q0\n"
                     return (Unsatisfiable i')
                 False -> do
-                    fix aag sys q0' t0 b bClauses maxVar
+                    fix aag sys q0' t0 b p maxVar
 
 -----------------------------------------------------------------------
 
 data Result = Satisfiable | Unsatisfiable Formula deriving (Show)
 
-interpolate :: System -> Formula -> CNF -> ClauseSet -> Var -> IO Result
-interpolate sys a b bClauses maxVar = do
+interpolate :: System -> Formula -> ClauseSet -> Clause -> Var -> IO Result
+interpolate sys a b p maxVar = do
     let (a', n1) = toCNF a (maxVar + 1)
-    i <- newInterpolation a' b bClauses sys
+        b' = clauseSetInsert p b
+    i <- newInterpolation a' b' sys
     ok <- runSolverWithProof (mkProofLogger i) $ do
         replicateM_ (fromIntegral n1) newVar
         addUnit (Neg 0)
         mapM_ addClause a'
-        mapM_ addClause b
+        forClauses_ b' addClause
         solve
         isOkay
     if ok then return Satisfiable

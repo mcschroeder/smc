@@ -6,11 +6,14 @@ module Interpolation
     , mkProofLogger
 
     , ClauseSet
-    , mkClauseSet, clauseSetUnionCNF, clauseSetMember
+    , mkClauseSet, clauseSetUnionCNF, clauseSetMember, clauseSetInsert
+    , forClauses_
     ) where
 
 import Control.Applicative
-import Data.IntSet (IntSet, notMember, fromList)
+import Data.Foldable (for_)
+import Data.IntSet (IntSet)
+import qualified Data.IntSet as IntSet
 import Data.List hiding (and,or)
 import Data.Maybe
 import Data.Set (Set)
@@ -55,6 +58,20 @@ clauseSetUnionCNF (ClauseSet cs) =
 clauseSetMember :: Clause -> ClauseSet -> Bool
 clauseSetMember c (ClauseSet cs) = Set.member (sort c) cs
 
+clauseSetInsert :: Clause -> ClauseSet -> ClauseSet
+clauseSetInsert c (ClauseSet cs) = ClauseSet $ Set.insert (sort c) cs
+
+forClauses_ :: Applicative f => ClauseSet -> (Clause -> f a) -> f ()
+forClauses_ (ClauseSet cs) = for_ cs
+
+------------------------------------------------------------------------------
+
+mkLitSet :: [Clause] -> IntSet
+mkLitSet = IntSet.fromList . map (fromIntegral . encodeLit) . concat
+
+mkLitSet' :: ClauseSet -> IntSet
+mkLitSet' (ClauseSet cs) = mkLitSet $ Set.toList cs
+
 ------------------------------------------------------------------------------
 
 data Interpolation = Interpolation {
@@ -67,14 +84,14 @@ data Vertex = Vertex [(Literal,Label)] Formula deriving (Show)
 
 data System = McMillan | Symmetric | InverseMcMillan deriving (Show, Read)
 
-newInterpolation :: [Clause] -> [Clause] -> ClauseSet -> System -> IO Interpolation
-newInterpolation a b bClauses sys = do
+newInterpolation :: [Clause] -> ClauseSet -> System -> IO Interpolation
+newInterpolation a b sys = do
     proof <- V.new 100 -- TODO: tweak
 
-    let bLocal = flip clauseSetMember bClauses
+    let bLocal = flip clauseSetMember b
 
     let a' = mkLitSet a
-        b' = mkLitSet b
+        b' = mkLitSet' b
         label = stdLabel a' b' $ case sys of
             McMillan        -> B
             Symmetric       -> AB
@@ -82,15 +99,13 @@ newInterpolation a b bClauses sys = do
 
     return Interpolation{..}
 
-mkLitSet :: [Clause] -> IntSet
-mkLitSet = fromList . map (fromIntegral . encodeLit) . concat
 
 stdLabel :: IntSet -> IntSet -> Label -> Literal -> Label
 stdLabel a b s t =
     let t' = (fromIntegral . encodeLit) t in
-    if t' `notMember` a
+    if t' `IntSet.notMember` a
         then B
-        else if t' `notMember` b
+        else if t' `IntSet.notMember` b
             then A
             else s
 
