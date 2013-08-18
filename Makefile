@@ -3,7 +3,7 @@
 MINISAT_DIR = MiniSat-p_v1.14
 CXX = g++
 #CFLAGS = -ggdb -D DEBUG
-#PROF_OPTS = -rtsopts -prof -auto-all
+PROF_OPTS = -rtsopts -prof -auto-all
 APP = smc
 
 smc: clean minisat
