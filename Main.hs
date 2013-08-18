@@ -17,7 +17,7 @@ import Formula
 import Aiger
 import Interpolation
 
------------------------------------------------------------------------
+------------------------------------------------------------------------------
 
 main :: IO ()
 main = do
@@ -31,80 +31,71 @@ main = do
         Left  err -> print err
         Right aag -> do
             checkAiger aag sys >>= \case
-                True  -> putStrLn "\nOK"
-                False -> putStrLn "\nFAIL"
+                Fixpoint         -> putStrLn $ "OK"
+                Counterexample k -> putStrLn $ "FAIL @ k=" ++ (show k)
 
------------------------------------------------------------------------
+------------------------------------------------------------------------------
 
-checkAiger :: Aiger -> System -> IO Bool
+data CheckResult = Fixpoint | Counterexample Int deriving (Show)
+
+checkAiger :: Aiger -> System -> IO CheckResult
 checkAiger aag sys = do
-    let (ls0,gs0,o0,n0) = unwind aag 0
-        (ls1,gs1,o1,n1) = unwind aag 1
+    let (ls0,gs0,o0,_) = unwind aag 0
+    sat (fromCNF $ [o0] : gs0 ++ ls0) >>= \case
+        True -> return (Counterexample 0)
+        False -> do
+            let (ls1,gs1,o1,n1) = unwind aag 1
+                q0 = fromCNF $ ls0
+                t1 = fromCNF $ ls1 ++ gs0
+                b1 = mkClauseSet gs1
+                bLits1 = mkLitSet gs1
+            check aag sys q0 t1 b1 bLits1 [o1] n1 1
 
-    let q0 = fromCNF $ ls0
-        t0 = fromCNF $ ls1 ++ gs0
-
-    let b0 = mkClauseSet gs0
-        bLits0 = mkLitSet gs0
-        b1 = mkClauseSet gs1
-        bLits1 = mkLitSet gs1
-
-    interpolate sys q0 b0 bLits0 [o0] n0 >>= \case
-        Satisfiable     -> return False  -- property trivially true
-        Unsatisfiable _ -> check aag sys 1 q0 t0 b1 bLits1 [o1] n1
-
-
-check :: Aiger -> System -> Int -> Formula -> Formula -> ClauseSet -> LitSet -> Clause -> Var
-      -> IO Bool
-check aag sys k q0 t0 b bLits p maxVar = do
-    printf "check k=%d\n" k
-    let a = q0 `and` t0
-    interpolate sys a b bLits p maxVar >>= \case
-        Satisfiable -> do
-            printf "\tSAT\n"
-            return False
+check :: Aiger -> System
+      -> Formula -> Formula
+      -> ClauseSet -> LitSet -> Clause -> Var
+      -> Int
+      -> IO CheckResult
+check aag sys q0 t1 b bLits p n k = do
+    let a = q0 `and` t1
+    interpolate sys a b bLits p n >>= \case
+        Satisfiable -> return (Counterexample k)
         Unsatisfiable i -> do
-            printf "\tUNSAT\n"
             let i' = mapFormula (rewind aag) i
-            let q0' = i' `or` q0
-            fix aag sys q0' t0 b bLits p maxVar >>= \case
-                Unsatisfiable _ -> do
-                    printf "\tFOUND FIXPOINT\n"
-                    return True
-                Satisfiable -> do
+                q0' = i' `or` q0
+            fix aag sys q0' t1 b bLits p n >>= \case
+                True -> return Fixpoint
+                False -> do
                     let (ls,gs,o,n') = unwind aag (k+1)
                         b' = clauseSetUnionCNF b (gs ++ ls)
                         bLits' = litSetUnionCNF bLits (gs ++ ls)
-                    check aag sys (k+1) q0 t0 b' bLits (o:p) n'
+                    check aag sys q0 t1 b' bLits (o:p) n' (k+1)
 
-
-fix :: Aiger -> System -> Formula -> Formula -> ClauseSet -> LitSet -> Clause -> Var
-    -> IO Result
-fix aag sys q0 t0 b bLits p maxVar = do
-    printf "fix\n"
-    let a = q0 `and` t0
-    interpolate sys a b bLits p maxVar >>= \case
-        Satisfiable -> do
-            printf "\tSAT\n"
-            return Satisfiable
+fix :: Aiger -> System
+    -> Formula -> Formula
+    -> ClauseSet -> LitSet -> Clause -> Var
+    -> IO Bool
+fix aag sys q t1 b bLits p n = do
+    let a = q `and` t1
+    interpolate sys a b bLits p n >>= \case
+        Satisfiable -> return False
         Unsatisfiable i -> do
-            printf "\tUNSAT\n"
             let i' = mapFormula (rewind aag) i
-            let q0' = i' `or` q0
-            q0' `implies` q0 >>= \case
-                True -> do
-                    printf "\tq0' => q0\n"
-                    return (Unsatisfiable i')
-                False -> do
-                    fix aag sys q0' t0 b bLits p maxVar
+            let q' = i' `or` q
+            q' `implies` q >>= \case
+                True -> return True
+                False -> fix aag sys q' t1 b bLits p n
 
------------------------------------------------------------------------
+------------------------------------------------------------------------------
 
-data Result = Satisfiable | Unsatisfiable Formula deriving (Show)
+data InterpolationResult = Satisfiable | Unsatisfiable Formula deriving (Show)
 
-interpolate :: System -> Formula -> ClauseSet -> LitSet -> Clause -> Var -> IO Result
-interpolate sys a b bLits p maxVar = do
-    let (a', n1) = toCNF a (maxVar + 1)
+interpolate :: System
+            -> Formula
+            -> ClauseSet -> LitSet -> Clause -> Var
+            -> IO InterpolationResult
+interpolate sys a b bLits p n = do
+    let (a', n1) = toCNF a (n+1)
         aLits = mkLitSet a'
         b' = clauseSetInsert p b
         bLits' = litSetUnionCNF bLits [p]
