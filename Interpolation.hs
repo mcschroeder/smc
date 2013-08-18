@@ -4,12 +4,16 @@ module Interpolation
     ( Interpolation, System(..)
     , newInterpolation, extractInterpolant
     , mkProofLogger
+
+    , ClauseSet
+    , mkClauseSet, clauseSetUnionCNF, clauseSetMember
     ) where
 
 import Control.Applicative
 import Data.IntSet (IntSet, notMember, fromList)
 import Data.List hiding (and,or)
 import Data.Maybe
+import Data.Set (Set)
 import qualified Data.Set as Set
 import Prelude hiding (and,or)
 
@@ -39,9 +43,23 @@ _ `join` _ = AB
 
 ------------------------------------------------------------------------------
 
+newtype ClauseSet = ClauseSet (Set Clause)
+
+mkClauseSet :: CNF -> ClauseSet
+mkClauseSet = ClauseSet . Set.fromList . map sort
+
+clauseSetUnionCNF :: ClauseSet -> CNF -> ClauseSet
+clauseSetUnionCNF (ClauseSet cs) =
+    ClauseSet . Set.union cs . Set.fromList . map sort
+
+clauseSetMember :: Clause -> ClauseSet -> Bool
+clauseSetMember c (ClauseSet cs) = Set.member (sort c) cs
+
+------------------------------------------------------------------------------
+
 data Interpolation = Interpolation {
     proof  :: DynamicVector Vertex,
-    aLocal :: Clause -> Bool,
+    bLocal :: Clause -> Bool,
     label  :: Literal -> Label
 }
 
@@ -49,12 +67,11 @@ data Vertex = Vertex [(Literal,Label)] Formula deriving (Show)
 
 data System = McMillan | Symmetric | InverseMcMillan deriving (Show, Read)
 
-newInterpolation :: [Clause] -> [Clause] -> System -> IO Interpolation
-newInterpolation a b sys = do
+newInterpolation :: [Clause] -> [Clause] -> ClauseSet -> System -> IO Interpolation
+newInterpolation a b bClauses sys = do
     proof <- V.new 100 -- TODO: tweak
 
-    let sortedA = Set.fromList $ map sort a
-    let aLocal = flip Set.member sortedA . sort
+    let bLocal = flip clauseSetMember bClauses
 
     let a' = mkLitSet a
         b' = mkLitSet b
@@ -88,7 +105,7 @@ mkProofLogger :: Interpolation -> ProofLogger
 mkProofLogger Interpolation{..} = ProofLogger root chain deleted
     where
         root :: Clause -> IO ()
-        root c = V.append proof (initialize label aLocal c)
+        root c = V.append proof (initialize label bLocal c)
 
         chain :: [ClauseId] -> [Var] -> IO ()
         chain cids vars =
@@ -106,11 +123,12 @@ mkProofLogger Interpolation{..} = ProofLogger root chain deleted
 
 
 initialize :: (Literal -> Label) -> (Clause -> Bool) -> Clause -> Vertex
-initialize label aLocal c = Vertex c1 i1
+initialize label bLocal c = Vertex c1 i1
     where
         c1 = map (\t -> (t, label t)) c
-        i1 | aLocal c  =  ors [Lit t       | (t,l) <- c1, l .<=. B]
-           | otherwise = ands [Lit (neg t) | (t,l) <- c1, l .<=. A]
+        i1 | bLocal c  = ands [Lit (neg t) | (t,l) <- c1, l .<=. A]
+           | otherwise =  ors [Lit t       | (t,l) <- c1, l .<=. B]
+
 
 
 resolve :: Vertex -> Vertex -> Var -> Vertex
